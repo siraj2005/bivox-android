@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# الصلاحية اللازمة لنشر الإصدارات / permission needed to publish releases
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,11 +24,48 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      # مفتاح التوقيع الثابت من Secrets. دونه يُبنى APK للتجربة فقط ولا يُنشر تحديث.
+      # Fixed signing key from Secrets. Without it a test APK is built and no update is published.
+      - name: Prepare signing key
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.BIVOX_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/bivox.p12"
+            echo "BIVOX_KEYSTORE_FILE=$RUNNER_TEMP/bivox.p12" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No signing key in Secrets - building a test APK only, no update will be published"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # رقم البناء = رقم التشغيل، فيكون كل بناء أحدث من السابق تلقائيًا
+      # Build number = run number, so every build is automatically newer than the last
+      - name: Build release APK
+        env:
+          BIVOX_STORE_PASS: ${{ secrets.BIVOX_STORE_PASS }}
+          BIVOX_KEY_ALIAS: ${{ secrets.BIVOX_KEY_ALIAS }}
+          BIVOX_KEY_PASS: ${{ secrets.BIVOX_KEY_PASS }}
+        run: gradle assembleRelease --no-daemon --stacktrace -PbivoxVersionCode=${{ github.run_number }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: BiVox-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: BiVox-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      # النشر في Releases: التطبيق يقرأ منه آخر إصدار (الوسم b + رقم البناء)
+      # Publish to Releases: the app reads the latest build from here (tag b + build number)
+      - name: Publish release
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          cp app/build/outputs/apk/release/app-release.apk BiVox.apk
+          gh release create "b${{ github.run_number }}" BiVox.apk \
+            --title "$VER" \
+            --notes "${MSG:-update}" \
+            --latest

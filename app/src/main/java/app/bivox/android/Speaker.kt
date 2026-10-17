@@ -4,8 +4,11 @@ import android.content.Context
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-// النطق (اختياري): إن غاب المحرك أو اللغة لا ينطق شيئًا ولا يتعطل التطبيق
-// Speech (optional): if the engine or language is missing, nothing is spoken and nothing breaks
+// نتيجة محاولة النطق / result of a speak attempt
+enum class SpeakResult { OK, NO_ENGINE, NO_VOICE, EMPTY }
+
+// النطق (اختياري): إن غاب المحرك أو صوت اللغة نخبر المستخدم ولا يتعطل التطبيق
+// Speech (optional): if the engine or the language voice is missing we tell the user and nothing breaks
 class Speaker(context: Context, private val onReady: () -> Unit) {
 
     private var engine: TextToSpeech? = null
@@ -26,16 +29,40 @@ class Speaker(context: Context, private val onReady: () -> Unit) {
         }
     }
 
-    fun say(text: String, lang: String) {
+    fun say(text: String, lang: String): SpeakResult {
         val e = engine
-        if (!available || e == null || text.isEmpty()) return
-        try {
-            val r = e.setLanguage(Locale(lang))
-            if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) return
-            e.speak(text, TextToSpeech.QUEUE_FLUSH, null, "bivox")
+        if (!available || e == null) return SpeakResult.NO_ENGINE
+        if (text.isEmpty()) return SpeakResult.EMPTY
+        return try {
+            if (!selectVoice(e, lang)) {
+                SpeakResult.NO_VOICE
+            } else {
+                e.speak(text, TextToSpeech.QUEUE_FLUSH, null, "bivox")
+                SpeakResult.OK
+            }
         } catch (ex: Exception) {
-            // نتجاهل: النطق ميزة إضافية / ignore: speech is a bonus feature
+            SpeakResult.NO_ENGINE
         }
+    }
+
+    // نجرب اللغة العامة ثم كل نسخ الدول التي يعرضها المحرك (مثل ar-SA)
+    // Try the plain language, then every country variant the engine lists (e.g. ar-SA)
+    private fun selectVoice(e: TextToSpeech, lang: String): Boolean {
+        val candidates = ArrayList<Locale>()
+        candidates.add(Locale(lang))
+        try {
+            val all = e.availableLanguages
+            if (all != null) {
+                for (l in all) if (l.language == lang) candidates.add(l)
+            }
+        } catch (ex: Exception) {
+            // بعض المحركات لا تعرض القائمة / some engines do not expose the list
+        }
+        for (l in candidates) {
+            val r = e.setLanguage(l)
+            if (r >= TextToSpeech.LANG_AVAILABLE) return true
+        }
+        return false
     }
 
     fun shutdown() {

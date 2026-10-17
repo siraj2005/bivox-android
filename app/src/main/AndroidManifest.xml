@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- الإنترنت للترجمة فقط / Internet for translation only -->
+    <!-- الإنترنت للترجمة والتحديث فقط / Internet for translation and updates only -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- يسمح للتطبيق بتثبيت تحديثاته بنفسه (يوافق عليه المستخدم مرة واحدة) -->
+    <!-- Lets the app install its own updates (the user allows it once) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- يلزم لرؤية محرك النطق على أندرويد 11+ / Needed to see the TTS engine on Android 11+ -->
     <queries>
@@ -28,5 +32,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- نتيجة التثبيت من النظام / install result from the system -->
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
     </application>
 </manifest>

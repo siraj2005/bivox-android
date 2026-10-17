@@ -2,15 +2,19 @@ package app.bivox.android
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -56,10 +60,13 @@ class MainActivity : Activity() {
     private var theirIdx = Langs.CODES.indexOf("en")
     private var lastOrig = ""
     private var lastTrans = ""
+    private var lastDst = "en"                   // لغة آخر ترجمة (للنطق) / language of the last translation (for speech)
     private val history = ArrayList<String>()   // الأحدث أولًا، حتى 20 / newest first, max 20
     private var statusKey = "ready"
     private var busy = false
     private var draft = ""
+    private var checkingUpdate = false
+    private var updating = false
 
     private var u = 4f                           // وحدة القياس = 1% من الضلع القصير / unit = 1% of short side
     private lateinit var t: Map<String, String>
@@ -84,6 +91,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         speaker = Speaker(this) { main.post { refreshStatus() } }
         buildUi()
+        // تحقق صامت من التحديث عند فتح التطبيق / silent update check when the app opens
+        if (savedInstanceState == null) checkUpdate(false)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -222,11 +231,15 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         // العنوان + زر لغة الواجهة / title + UI-language button
+        // اتجاه العنوان تابع للغة الواجهة فيُحاذى دائمًا مع بقية العناصر
+        // The title direction follows the UI language so it always aligns with the rest
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
-        add(head, label("${t.getValue("title")}  v${BuildConfig.VERSION_NAME}", 5.2f, cText, true),
-            weight = 1f, width = 0)
+        val titleLbl = label(t.getValue("title"), 5.2f, cText, true)
+        titleLbl.textDirection = if (rtl) View.TEXT_DIRECTION_RTL else View.TEXT_DIRECTION_LTR
+        titleLbl.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(head, titleLbl, weight = 1f, width = 0)
         val uiBtn = smallButton(t.getValue("ui_lang")) {
             uiLang = if (uiLang == "ar") "en" else "ar"
             rebuildUi()
@@ -234,6 +247,12 @@ class MainActivity : Activity() {
         head.addView(uiBtn, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         add(body, head)
+
+        // رقم الإصدار تحت العنوان، دائمًا بالاتجاه اللاتيني / version under the title, always LTR
+        val ver = label("v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}", 3.4f, cMuted)
+        ver.textDirection = View.TEXT_DIRECTION_LTR
+        ver.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(body, ver, px(0.5f))
 
         // اللغتان + زر التبديل / the two languages + swap button
         myPicker = picker(t.getValue("i_speak"), { myIdx }, { myIdx = it })
@@ -275,6 +294,8 @@ class MainActivity : Activity() {
         add(card, origLbl, px(2f))
         add(card, label(t.getValue("trans"), 3.4f, cMuted), px(2f))
         add(card, transLbl, px(2f))
+        add(card, smallButton(t.getValue("speak")) { speakLast() }, px(2f),
+            width = ViewGroup.LayoutParams.WRAP_CONTENT)
         add(body, card, gap)
 
         // حقل الإدخال والزران الكبيران / input field and the two big buttons
@@ -283,8 +304,7 @@ class MainActivity : Activity() {
             setHintTextColor(cMuted)
             setTextColor(cText)
             sizeU(this, 4.2f)
-            inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setSingleLine(false); maxLines = 4
             minHeight = px(12f)
             setPadding(px(2.5f), px(2.5f), px(2.5f), px(2.5f))
@@ -311,6 +331,10 @@ class MainActivity : Activity() {
 
         statusLbl = label("", 3.4f, cMuted)
         add(body, statusLbl, gap)
+
+        // زر التحقق من التحديث / check-for-update button
+        add(body, smallButton(t.getValue("update_check")) { checkUpdate(true) }, gap,
+            width = ViewGroup.LayoutParams.WRAP_CONTENT)
 
         // السجل (آخر المحادثات) / history of the latest exchanges
         add(body, label(t.getValue("history"), 3.4f, cMuted), gap)
@@ -368,14 +392,126 @@ class MainActivity : Activity() {
         busy = false
         meBtn.isEnabled = true; theyBtn.isEnabled = true
         if (out == null) { setStatus("fail"); return }
-        lastOrig = orig; lastTrans = out
+        lastOrig = orig; lastTrans = out; lastDst = dst
         origLbl.text = orig; transLbl.text = out
-        setStatus("ready")
         input.setText("")
-        speaker.say(out, dst)
+        val r = speaker.say(out, dst)
+        statusKey = if (r == SpeakResult.NO_VOICE) "no_voice" else "ready"
         // سطر في السجل (الأحدث أولًا، بحد أقصى 20) / history line (newest first, max 20)
         history.add(0, "${Langs.NAMES.getValue(src)} ➜ ${Langs.NAMES.getValue(dst)}:  $orig  →  $out")
         while (history.size > 20) history.removeAt(history.size - 1)
         rebuildUi()
+    }
+
+    // ── النطق اليدوي / Manual speech ──
+    private fun speakLast() {
+        if (lastTrans.isEmpty()) return
+        when (speaker.say(lastTrans, lastDst)) {
+            SpeakResult.NO_VOICE -> showVoiceHelp(lastDst)
+            SpeakResult.NO_ENGINE -> showVoiceHelp(lastDst)
+            else -> {}
+        }
+    }
+
+    // يشرح كيف يُضاف صوت اللغة ويفتح إعدادات النطق
+    // Explains how to add the language voice and opens the speech settings
+    private fun showVoiceHelp(lang: String) {
+        if (isFinishing) return
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setMessage(t.getValue("no_voice_msg").format(Langs.NAMES.getValue(lang)))
+            .setPositiveButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
+            .setNegativeButton(t.getValue("close"), null)
+            .show()
+    }
+
+    private fun openVoiceSettings() {
+        try {
+            startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (e2: Exception) {
+                // لا شيء نفعله / nothing else to do
+            }
+        }
+    }
+
+    // ── التحديث التلقائي / Auto-update ──
+    private fun checkUpdate(manual: Boolean) {
+        if (checkingUpdate || updating) return
+        checkingUpdate = true
+        if (manual) setStatus("update_checking")
+        io.execute {
+            val r: Pair<UpdateInfo?, Boolean> = try {
+                Pair(Updater.check(BuildConfig.VERSION_CODE), false)
+            } catch (e: Exception) {
+                Pair(null, true)
+            }
+            main.post {
+                if (isFinishing) return@post
+                checkingUpdate = false
+                val info = r.first
+                if (info != null) {
+                    if (statusKey == "update_checking") setStatus("ready")
+                    showUpdateDialog(info)
+                } else if (manual) {
+                    setStatus(if (r.second) "update_fail" else "update_none")
+                } else if (statusKey == "update_checking") {
+                    setStatus("ready")
+                }
+            }
+        }
+    }
+
+    private fun showUpdateDialog(info: UpdateInfo) {
+        val notes = info.notes.trim().take(400)
+        val msg = t.getValue("update_found").format(info.name, info.code) +
+            (if (notes.isEmpty()) "" else "\n\n$notes")
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(t.getValue("update_title"))
+            .setMessage(msg)
+            .setPositiveButton(t.getValue("update_now")) { _, _ -> startUpdate(info) }
+            .setNegativeButton(t.getValue("update_later"), null)
+            .show()
+    }
+
+    private fun startUpdate(info: UpdateInfo) {
+        if (updating) return
+        // أندرويد 8+: يلزم إذن «تثبيت تطبيقات غير معروفة» لهذا التطبيق مرة واحدة
+        // Android 8+: this app needs the "install unknown apps" permission once
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(t.getValue("update_perm_title"))
+                .setMessage(t.getValue("update_perm_msg"))
+                .setPositiveButton(t.getValue("update_open")) { _, _ ->
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:$packageName")))
+                    } catch (e: Exception) {
+                        // نتجاهل / ignore
+                    }
+                }
+                .setNegativeButton(t.getValue("close"), null)
+                .show()
+            return
+        }
+        updating = true
+        setStatus("update_downloading")
+        io.execute {
+            try {
+                val file = Updater.download(this, info) { p ->
+                    main.post {
+                        if (::statusLbl.isInitialized) {
+                            statusLbl.text = t.getValue("update_downloading") + " " + p + "%"
+                        }
+                    }
+                }
+                main.post { setStatus("update_installing") }
+                Updater.install(this, file)
+            } catch (e: Exception) {
+                main.post { setStatus("update_fail") }
+            }
+            main.post { updating = false }
+        }
     }
 }

@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.1.0 (المرحلة أ / Phase A)
+# BiVox Android — الإصدار 0.2.0 (المرحلة أ + التحديث التلقائي / Phase A + auto-update)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
@@ -25,3 +25,13 @@ Face-to-face conversation translator: type text, pick the direction, and the tra
 - `Translator.kt` — Google ثم MyMemory / Google then MyMemory
 - `Speaker.kt` — النطق الاختياري / optional speech
 - `Langs.kt` — اللغات ونصوص الواجهة / languages and UI strings
+
+## التحديث التلقائي / Auto-update
+- كل رفع إلى `main` يبني APK موقّعًا وينشره في **Releases** (الوسم `b` + رقم البناء).
+  Every push to `main` builds a signed APK and publishes it to **Releases** (tag `b` + build number).
+- التطبيق يتحقق عند الفتح (وبزر «التحقق من التحديث») ثم يعرض نافذة «تحديث الآن».
+  The app checks on launch (and via the "Check for updates" button) and offers "Update now".
+- يلزم إضافة 4 قيم في **Settings ← Secrets and variables ← Actions**: `BIVOX_KEYSTORE_B64` و`BIVOX_STORE_PASS` و`BIVOX_KEY_ALIAS` و`BIVOX_KEY_PASS`.
+  Add 4 secrets under **Settings → Secrets and variables → Actions**.
+- دون المفتاح يُبنى APK للتجربة فقط ولا يُنشر تحديث. / Without the key only a test APK is built, no update is published.
+- لا ترفع ملف المفتاح إلى المستودع أبدًا. / Never commit the keystore to the repo.
