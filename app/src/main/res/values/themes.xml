@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- سمة داكنة بلا مكتبات: Material المدمجة في النظام (API 21+) -->
+    <!-- Dark theme with no libraries: the system's built-in Material (API 21+) -->
+    <style name="Theme.BiVox" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">#131318</item>
+        <item name="android:navigationBarColor">#131318</item>
+    </style>
+</resources>
