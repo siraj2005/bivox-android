@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- خلفية الأيقونة: تدرج الهوية الرسمي من أعلى اليسار إلى أسفل اليمين -->
+<!-- Icon background: the official brand gradient, top-left to bottom-right -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#4C26C9"
+        android:centerColor="#3A64D8"
+        android:endColor="#00A2E2"
+        android:type="linear" />
+</shape>

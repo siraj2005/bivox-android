@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.2.0 (المرحلة أ + التحديث التلقائي / Phase A + auto-update)
+# BiVox Android — الإصدار 0.2.1 (المرحلة أ + التحديث التلقائي + الشعار / Phase A + auto-update)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
@@ -35,3 +35,7 @@ Face-to-face conversation translator: type text, pick the direction, and the tra
   Add 4 secrets under **Settings → Secrets and variables → Actions**.
 - دون المفتاح يُبنى APK للتجربة فقط ولا يُنشر تحديث. / Without the key only a test APK is built, no update is published.
 - لا ترفع ملف المفتاح إلى المستودع أبدًا. / Never commit the keystore to the repo.
+
+## الهوية / Branding
+- ملفات الشعار الرسمية (SVG) في `branding/`؛ الأيقونة والشعار داخل التطبيق مولّدان منها.
+  The official logo files (SVG) are in `branding/`; the app icon and in-app logo are generated from them.

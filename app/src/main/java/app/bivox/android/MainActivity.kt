@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -24,6 +25,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -236,6 +238,13 @@ class MainActivity : Activity() {
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
+        // الشعار الرسمي بجانب العنوان / the official logo next to the title
+        val logo = ImageView(this)
+        logo.setImageResource(R.drawable.bivox_logo)
+        logo.contentDescription = "BiVox"
+        val logoLp = LinearLayout.LayoutParams(px(11f), px(11f))
+        logoLp.marginEnd = gap
+        head.addView(logo, logoLp)
         val titleLbl = label(t.getValue("title"), 5.2f, cText, true)
         titleLbl.textDirection = if (rtl) View.TEXT_DIRECTION_RTL else View.TEXT_DIRECTION_LTR
         titleLbl.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
@@ -419,9 +428,40 @@ class MainActivity : Activity() {
         if (isFinishing) return
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setMessage(t.getValue("no_voice_msg").format(Langs.NAMES.getValue(lang)))
-            .setPositiveButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
+            .setPositiveButton(t.getValue("voice_install")) { _, _ -> installVoiceData() }
+            .setNeutralButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
             .setNegativeButton(t.getValue("close"), null)
             .show()
+    }
+
+    // يطلب من محرك Google شاشة تنزيل بيانات الصوت؛ وإن غاب المحرك يفتح صفحته في Play
+    // Asks the Google engine for its voice-data download screen; if missing, opens its Play page
+    private fun installVoiceData() {
+        val gtts = "com.google.android.tts"
+        try {
+            val i = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+            i.setPackage(gtts)
+            startActivity(i)
+            return
+        } catch (e: Exception) {
+            // محرك Google غير مثبّت / Google engine not installed
+        }
+        try {
+            startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))
+            return
+        } catch (e: Exception) {
+            // لا محرك يدعم الطلب / no engine handles the request
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$gtts")))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=$gtts")))
+            } catch (e2: Exception) {
+                // لا شيء نفعله / nothing else to do
+            }
+        }
     }
 
     private fun openVoiceSettings() {
