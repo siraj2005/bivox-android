@@ -7,7 +7,7 @@ plugins {
 
 // رقم البناء يأتي تلقائيًا من GitHub Actions (-PbivoxVersionCode=رقم التشغيل)
 // Build number comes automatically from GitHub Actions (-PbivoxVersionCode=run number)
-val buildNumber: Int = (project.findProperty("bivoxVersionCode") as String?)?.toIntOrNull() ?: 3
+val buildNumber: Int = (project.findProperty("bivoxVersionCode") as String?)?.toIntOrNull() ?: 5
 
 // مفتاح التوقيع الثابت يصل عبر متغيرات بيئة من Secrets؛ دونه يُستعمل مفتاح التجربة
 // The fixed signing key arrives via env vars from Secrets; without it the debug key is used
@@ -25,7 +25,7 @@ android {
         targetSdk = 34
         versionCode = buildNumber
         // يُرفع مع كل تحديث ويظهر داخل التطبيق / bumped every update and shown in the app
-        versionName = "0.2.1"
+        versionName = "0.2.2"
     }
 
     signingConfigs {

@@ -69,6 +69,7 @@ class MainActivity : Activity() {
     private var draft = ""
     private var checkingUpdate = false
     private var updating = false
+    private var voiceRefreshNeeded = false
 
     private var u = 4f                           // وحدة القياس = 1% من الضلع القصير / unit = 1% of short side
     private lateinit var t: Map<String, String>
@@ -91,7 +92,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        speaker = Speaker(this) { main.post { refreshStatus() } }
+        speaker = Speaker(this,
+            onReady = { main.post { refreshStatus() } },
+            onFail = { main.post { if (!isFinishing) setStatus("speak_fail") } })
         buildUi()
         // تحقق صامت من التحديث عند فتح التطبيق / silent update check when the app opens
         if (savedInstanceState == null) checkUpdate(false)
@@ -100,6 +103,16 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         rebuildUi()   // أحجام جديدة بعد التدوير / new sizes after rotation
+    }
+
+    // بعد العودة من تنزيل صوت أو من إعدادات النطق نعيد بناء المحركات ليرى التطبيق التغيير
+    // After returning from a voice download or the speech settings, rebuild the engines so the app sees the change
+    override fun onResume() {
+        super.onResume()
+        if (voiceRefreshNeeded) {
+            voiceRefreshNeeded = false
+            speaker.refresh()
+        }
     }
 
     override fun onDestroy() {
@@ -303,8 +316,19 @@ class MainActivity : Activity() {
         add(card, origLbl, px(2f))
         add(card, label(t.getValue("trans"), 3.4f, cMuted), px(2f))
         add(card, transLbl, px(2f))
-        add(card, smallButton(t.getValue("speak")) { speakLast() }, px(2f),
-            width = ViewGroup.LayoutParams.WRAP_CONTENT)
+        // زر النطق + زر حالة الأصوات (التشخيص متاح دائمًا) / Speak button + voice status button (diagnosis always reachable)
+        val speakRow = LinearLayout(this)
+        speakRow.orientation = LinearLayout.HORIZONTAL
+        speakRow.addView(smallButton(t.getValue("speak")) { speakLast() }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val diagLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        diagLp.marginStart = gap
+        speakRow.addView(smallButton(t.getValue("voice_diag")) {
+            voiceRefreshNeeded = true
+            showVoiceDiag()
+        }, diagLp)
+        add(card, speakRow, px(2f), width = ViewGroup.LayoutParams.WRAP_CONTENT)
         add(body, card, gap)
 
         // حقل الإدخال والزران الكبيران / input field and the two big buttons
@@ -426,10 +450,23 @@ class MainActivity : Activity() {
     // Explains how to add the language voice and opens the speech settings
     private fun showVoiceHelp(lang: String) {
         if (isFinishing) return
+        voiceRefreshNeeded = true   // سنعيد بناء المحركات عند العودة / rebuild the engines on return
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setMessage(t.getValue("no_voice_msg").format(Langs.NAMES.getValue(lang)))
             .setPositiveButton(t.getValue("voice_install")) { _, _ -> installVoiceData() }
-            .setNeutralButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
+            .setNeutralButton(t.getValue("voice_diag")) { _, _ -> showVoiceDiag() }
+            .setNegativeButton(t.getValue("close"), null)
+            .show()
+    }
+
+    // يعرض المحركات المثبتة وحالة صوت كل لغة، ويفتح إعدادات النطق عند الحاجة
+    // Shows the installed engines and each language's voice state, and opens speech settings if needed
+    private fun showVoiceDiag() {
+        if (isFinishing) return
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(t.getValue("diag_title"))
+            .setMessage(t.getValue("diag_legend") + "\n\n" + speaker.report())
+            .setPositiveButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
             .setNegativeButton(t.getValue("close"), null)
             .show()
     }
