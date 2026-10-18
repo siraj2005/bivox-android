@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -30,6 +31,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -234,22 +236,29 @@ class BubbleService : Service() {
         measure()
         val s = screen()
         val view = FrameLayout(this)
-        // شكل الفقاعة يطابق شكل الشعار (مربع بزوايا مدوّرة) ليملأه الشعار بلا فراغات
-        // The bubble shape matches the logo (rounded square) so the logo fills it with no gaps
+        // فقاعة دائرية: الشعار مكبّر ليملأ الدائرة كلها ويُقصّ على شكلها، وحولها إطار رفيع
+        // Round bubble: the logo is enlarged to fill the whole circle and clipped to its shape, with a thin ring around it
+        val ring = max(1, (u * 0.45f).toInt())
         val bg = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = bubbleSize * 0.24f
+            shape = GradientDrawable.OVAL
             setColor(cCard)
-            setStroke(max(1, (u * 0.45f).toInt()), cPrimary)
+            setStroke(ring, cPrimary)
         }
         view.background = bg
         view.alpha = 0.95f
         val img = ImageView(this)
         img.setImageResource(R.drawable.bivox_logo)
         img.contentDescription = "BiVox"
-        val pad = max(1, (u * 0.45f).toInt())
-        img.setPadding(pad, pad, pad, pad)
-        view.addView(img, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
+        img.scaleType = ImageView.ScaleType.CENTER_CROP
+        img.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(v: View, outline: Outline) {
+                outline.setOval(0, 0, v.width, v.height)
+            }
+        }
+        img.clipToOutline = true
+        view.addView(img, FrameLayout.LayoutParams(bubbleSize - 2 * ring, bubbleSize - 2 * ring).apply {
+            gravity = Gravity.CENTER
+        })
 
         val lp = WindowManager.LayoutParams(
             bubbleSize, bubbleSize, overlayType(),
