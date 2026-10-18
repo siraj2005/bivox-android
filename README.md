@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.2.1 (المرحلة أ + التحديث التلقائي + الشعار / Phase A + auto-update)
+# BiVox Android — الإصدار 0.3.0 (المرحلة ب: الفقاعة العائمة / Phase B: floating bubble)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
@@ -35,6 +35,12 @@ Face-to-face conversation translator: type text, pick the direction, and the tra
   Add 4 secrets under **Settings → Secrets and variables → Actions**.
 - دون المفتاح يُبنى APK للتجربة فقط ولا يُنشر تحديث. / Without the key only a test APK is built, no update is published.
 - لا ترفع ملف المفتاح إلى المستودع أبدًا. / Never commit the keystore to the repo.
+
+## الفقاعة العائمة / Floating bubble
+- فقاعة قابلة للسحب فوق كل التطبيقات تفتح لوحة ترجمة مصغّرة؛ تعمل عبر خدمة أمامية بإشعار فيه زر «إيقاف».
+  A draggable bubble over all apps opens a mini translator panel; runs as a foreground service with a Stop action.
+- الأذونات: العرض فوق التطبيقات (مطلوب)، الإشعارات وتجاهل البطارية (موصى بهما) — شرحها في الشاشة الرئيسية.
+  Permissions: display over apps (required), notifications and battery exemption (recommended) — guided on the main screen.
 
 ## الهوية / Branding
 - ملفات الشعار الرسمية (SVG) في `branding/`؛ الأيقونة والشعار داخل التطبيق مولّدان منها.

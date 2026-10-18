@@ -8,6 +8,14 @@
     <!-- Lets the app install its own updates (the user allows it once) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- الفقاعة العائمة: عرض فوق التطبيقات وخدمة أمامية وإشعار وتجاهل تحسين البطارية -->
+    <!-- Floating bubble: overlay, foreground service, notification, battery-optimization exemption -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- يلزم لرؤية محرك النطق على أندرويد 11+ / Needed to see the TTS engine on Android 11+ -->
     <queries>
         <intent>
@@ -32,6 +40,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- خدمة الفقاعة العائمة / the floating bubble service -->
+        <service
+            android:name=".BubbleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_translator_bubble" />
+        </service>
 
         <!-- نتيجة التثبيت من النظام / install result from the system -->
         <receiver

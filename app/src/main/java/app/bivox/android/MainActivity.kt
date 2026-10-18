@@ -3,6 +3,7 @@ package app.bivox.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
@@ -14,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.text.InputType
@@ -70,6 +72,8 @@ class MainActivity : Activity() {
     private var checkingUpdate = false
     private var updating = false
     private var voiceRefreshNeeded = false
+    private var notifAsked = false               // سبق طلب إذن الإشعارات / notification permission already requested
+    private var lastSig = ""                     // بصمة حالة الأذونات عند بناء الواجهة / permission-state signature at build time
 
     private var u = 4f                           // وحدة القياس = 1% من الضلع القصير / unit = 1% of short side
     private lateinit var t: Map<String, String>
@@ -92,6 +96,10 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // نقرأ اللغات المحفوظة (مشتركة مع الفقاعة) / read the saved languages (shared with the bubble)
+        uiLang = Prefs.uiLang(this)
+        myIdx = Prefs.my(this)
+        theirIdx = Prefs.their(this)
         speaker = Speaker(this,
             onReady = { main.post { refreshStatus() } },
             onFail = { main.post { if (!isFinishing) setStatus("speak_fail") } })
@@ -109,6 +117,12 @@ class MainActivity : Activity() {
     // After returning from a voice download or the speech settings, rebuild the engines so the app sees the change
     override fun onResume() {
         super.onResume()
+        // اللغات قد تتغير من لوحة الفقاعة / the languages may change from the bubble panel
+        myIdx = Prefs.my(this)
+        theirIdx = Prefs.their(this)
+        if (::myPicker.isInitialized) updatePickers()
+        // تغيّرت الأذونات أو حالة الفقاعة؟ نعيد بناء الواجهة / permissions or bubble state changed? rebuild
+        if (::statusLbl.isInitialized && permSig() != lastSig) rebuildUi()
         if (voiceRefreshNeeded) {
             voiceRefreshNeeded = false
             speaker.refresh()
@@ -264,6 +278,7 @@ class MainActivity : Activity() {
         add(head, titleLbl, weight = 1f, width = 0)
         val uiBtn = smallButton(t.getValue("ui_lang")) {
             uiLang = if (uiLang == "ar") "en" else "ar"
+            Prefs.setUiLang(this, uiLang)
             rebuildUi()
         }
         head.addView(uiBtn, LinearLayout.LayoutParams(
@@ -277,8 +292,8 @@ class MainActivity : Activity() {
         add(body, ver, px(0.5f))
 
         // اللغتان + زر التبديل / the two languages + swap button
-        myPicker = picker(t.getValue("i_speak"), { myIdx }, { myIdx = it })
-        theirPicker = picker(t.getValue("they_speak"), { theirIdx }, { theirIdx = it })
+        myPicker = picker(t.getValue("i_speak"), { myIdx }, { myIdx = it; Prefs.setLangs(this, myIdx, theirIdx) })
+        theirPicker = picker(t.getValue("they_speak"), { theirIdx }, { theirIdx = it; Prefs.setLangs(this, myIdx, theirIdx) })
         val col1 = LinearLayout(this); col1.orientation = LinearLayout.VERTICAL
         add(col1, label(t.getValue("i_speak"), 3.4f, cMuted))
         add(col1, myPicker, px(1f))
@@ -287,6 +302,7 @@ class MainActivity : Activity() {
         add(col2, theirPicker, px(1f))
         val swap = smallButton(t.getValue("swap")) {
             val a = myIdx; myIdx = theirIdx; theirIdx = a
+            Prefs.setLangs(this, myIdx, theirIdx)
             updatePickers()
         }
         val langRow = LinearLayout(this)
@@ -364,6 +380,9 @@ class MainActivity : Activity() {
 
         statusLbl = label("", 3.4f, cMuted)
         add(body, statusLbl, gap)
+
+        // قسم الفقاعة العائمة / floating bubble section
+        buildBubbleSection(body, m, gap)
 
         // زر التحقق من التحديث / check-for-update button
         add(body, smallButton(t.getValue("update_check")) { checkUpdate(true) }, gap,
@@ -511,6 +530,148 @@ class MainActivity : Activity() {
                 // لا شيء نفعله / nothing else to do
             }
         }
+    }
+
+    // ── الفقاعة العائمة / Floating bubble ──
+    private fun overlayOk(): Boolean = BubbleService.canOverlay(this)
+
+    private fun notifOk(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
+
+    private fun battOk(): Boolean = try {
+        (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+    } catch (e: Exception) {
+        true   // لا نزعج المستخدم إن تعذر الفحص / don't bother the user if the check fails
+    }
+
+    // بصمة تتغير عند تغير أي إذن أو حالة الخدمة / signature that changes when any permission or the service state changes
+    private fun permSig(): String = "${overlayOk()}${notifOk()}${battOk()}${BubbleService.running}"
+
+    // سطر إذن: علامة ✓/✗ + نص + زر «السماح» إن لم يُمنح
+    // Permission row: ✓/✗ mark + text + an "Allow" button if not granted
+    private fun permRow(parent: LinearLayout, textKey: String, ok: Boolean, gap: Int, onAllow: () -> Unit) {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        val lbl = label((if (ok) "✓  " else "✗  ") + t.getValue(textKey), 3.8f, if (ok) cAccent else cOrig)
+        lbl.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(row, lbl, weight = 1f, width = 0)
+        if (!ok) {
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.marginStart = gap
+            row.addView(smallButton(t.getValue("perm_allow")) { onAllow() }, lp)
+        }
+        add(parent, row, gap)
+    }
+
+    private fun buildBubbleSection(body: LinearLayout, m: Int, gap: Int) {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setPadding(m, m, m, m)
+        card.background = rounded(cCard, cCardBorder)
+        add(card, label(t.getValue("bubble_title"), 4.6f, cText, true))
+        val desc = label(t.getValue("bubble_desc"), 3.6f, cMuted)
+        desc.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(card, desc, px(1f))
+
+        permRow(card, "perm_overlay", overlayOk(), gap) { openOverlaySettings() }
+        if (Build.VERSION.SDK_INT >= 33) {
+            permRow(card, "perm_notif", notifOk(), gap) { askNotifications() }
+        }
+        permRow(card, "perm_batt", battOk(), gap) { askBatteryExemption() }
+
+        val note = label(t.getValue("bubble_samsung"), 3.2f, cMuted)
+        note.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(card, note, gap)
+        add(card, smallButton(t.getValue("app_info")) { openAppInfo() }, gap,
+            width = ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        val on = BubbleService.running
+        val toggle = bigButton(t.getValue(if (on) "bubble_stop" else "bubble_start"),
+            if (on) cBtn else cAccent, if (on) cBtnPressed else cAccentPressed) { toggleBubble() }
+        add(card, toggle, gap)
+        add(body, card, gap)
+        lastSig = permSig()
+    }
+
+    private fun toggleBubble() {
+        if (BubbleService.running) {
+            Prefs.setBubbleOn(this, false)
+            BubbleService.stop(this)
+            setStatus("bubble_stopped")
+        } else {
+            if (!overlayOk()) { setStatus("bubble_need_overlay"); return }
+            try {
+                Prefs.setBubbleOn(this, true)
+                BubbleService.start(this)
+                setStatus("bubble_started")
+            } catch (e: Exception) {
+                Prefs.setBubbleOn(this, false)
+                setStatus("bubble_unsupported")
+                return
+            }
+        }
+        // الخدمة تبدأ/تتوقف بعد لحظة؛ نحدّث الزر بعدها / the service starts/stops a moment later; refresh the button then
+        main.postDelayed({ if (!isFinishing) rebuildUi() }, 700)
+    }
+
+    private fun openOverlaySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+            } catch (e2: Exception) {
+                setStatus("bubble_unsupported")
+            }
+        }
+    }
+
+    private fun askNotifications() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (!notifAsked) {
+            notifAsked = true
+            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF)
+        } else {
+            // سبق الرفض: النظام لن يسأل ثانية، نفتح إعدادات الإشعارات / denied before: the system won't ask again, open notification settings
+            try {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            } catch (e: Exception) {
+                openAppInfo()
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIF && !isFinishing) rebuildUi()
+    }
+
+    private fun askBatteryExemption() {
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (e2: Exception) {
+                openAppInfo()
+            }
+        }
+    }
+
+    private fun openAppInfo() {
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            // لا شيء نفعله / nothing else to do
+        }
+    }
+
+    companion object {
+        private const val REQ_NOTIF = 7
     }
 
     // ── التحديث التلقائي / Auto-update ──
