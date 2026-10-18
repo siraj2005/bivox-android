@@ -539,6 +539,25 @@ class MainActivity : Activity() {
         Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
 
+    // هل خدمة إمكانية الوصول مفعّلة؟ / is the accessibility service enabled?
+    private fun a11yOk(): Boolean {
+        if (BivoxAccessibilityService.instance != null) return true
+        return try {
+            val en = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            en.contains("$packageName/")
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun openA11ySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (e: Exception) {
+            openAppInfo()
+        }
+    }
+
     private fun battOk(): Boolean = try {
         (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
     } catch (e: Exception) {
@@ -546,7 +565,7 @@ class MainActivity : Activity() {
     }
 
     // بصمة تتغير عند تغير أي إذن أو حالة الخدمة / signature that changes when any permission or the service state changes
-    private fun permSig(): String = "${overlayOk()}${notifOk()}${battOk()}${BubbleService.running}"
+    private fun permSig(): String = "${overlayOk()}${notifOk()}${battOk()}${a11yOk()}${BubbleService.running}"
 
     // سطر إذن: علامة ✓/✗ + نص + زر «السماح» إن لم يُمنح
     // Permission row: ✓/✗ mark + text + an "Allow" button if not granted
@@ -581,6 +600,12 @@ class MainActivity : Activity() {
             permRow(card, "perm_notif", notifOk(), gap) { askNotifications() }
         }
         permRow(card, "perm_batt", battOk(), gap) { askBatteryExemption() }
+        permRow(card, "perm_a11y", a11yOk(), gap) { openA11ySettings() }
+        if (!a11yOk()) {
+            val an = label(t.getValue("a11y_note"), 3.2f, cMuted)
+            an.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+            add(card, an, gap)
+        }
 
         val note = label(t.getValue("bubble_samsung"), 3.2f, cMuted)
         note.textAlignment = View.TEXT_ALIGNMENT_VIEW_START

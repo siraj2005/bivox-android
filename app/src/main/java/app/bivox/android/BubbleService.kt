@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.util.TypedValue
@@ -33,6 +34,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
@@ -42,6 +44,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
@@ -57,12 +60,15 @@ class BubbleService : Service() {
     private val cMuted = Color.parseColor("#9A9AA8")
     private val cOrig = Color.parseColor("#B5B5C2")
     private val cCard = Color.parseColor("#1C1C24")
+    private val cCardT = Color.argb(0xB0, 0x1C, 0x1C, 0x24)
+    private val cPrimaryT = Color.argb(0xCC, 0x5B, 0x8D, 0xEF)
+    private val cAccentT = Color.argb(0xCC, 0x3F, 0xA3, 0x7A)
     private val cCardBorder = Color.parseColor("#2B2B36")
-    private val cField = Color.parseColor("#23232D")
+    private val cField = Color.argb(0xB0, 0x23, 0x23, 0x2D)
     private val cFieldBorder = Color.parseColor("#34343F")
-    private val cBtn = Color.parseColor("#2A2A36")
+    private val cBtn = Color.argb(0x99, 0x2A, 0x2A, 0x36)
     private val cBtnBorder = Color.parseColor("#3A3A47")
-    private val cBtnPressed = Color.parseColor("#34344A")
+    private val cBtnPressed = Color.argb(0xCC, 0x34, 0x34, 0x4A)
     private val cPrimary = Color.parseColor("#5B8DEF")
     private val cPrimaryPressed = Color.parseColor("#4A78D0")
     private val cAccent = Color.parseColor("#3FA37A")
@@ -75,6 +81,12 @@ class BubbleService : Service() {
     private val io = Executors.newSingleThreadExecutor()
     private val translator = Translator()
     private var speaker: Speaker? = null
+    private lateinit var env: Env
+    private lateinit var hub: TranslateHub
+    private lateinit var result: ResultOverlay
+    private lateinit var pick: PickOverlay
+    private lateinit var lens: LensOverlay
+    private var resultToken = 0
 
     private var u = 4f
     private var uiLang = "ar"
@@ -110,6 +122,20 @@ class BubbleService : Service() {
         super.onCreate()
         running = true
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        env = Env(this)
+        hub = TranslateHub(translator, main)
+        result = ResultOverlay(env)
+        pick = PickOverlay(env)
+        lens = LensOverlay(env, hub)
+        // أحداث الشاشة من خدمة الوصول: التمرير يمسح الترجمات القديمة، والعدسة تعيد القراءة
+        // Screen events from the accessibility service: scrolling clears old translations, the lens re-reads
+        BivoxAccessibilityService.listener = { type ->
+            if ((type == AccessibilityEvent.TYPE_VIEW_SCROLLED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) &&
+                result.showing && SystemClock.uptimeMillis() - result.shownAt > 800) {
+                result.close()
+            }
+            lens.onScreenEvent(type)
+        }
         speaker = Speaker(this,
             onReady = { main.post { refreshStatus() } },
             onFail = { main.post { if (panel != null) setStatus("speak_fail") } })
@@ -155,6 +181,7 @@ class BubbleService : Service() {
         super.onConfigurationChanged(newConfig)
         // تدوير الشاشة: نغلق اللوحة ونعيد ضبط موضع الفقاعة / rotation: close the panel and re-clamp the bubble
         closePanel()
+        pick.close(); result.close(); lens.close()
         measure()
         val lp = bubbleLp
         val b = bubble
@@ -169,6 +196,10 @@ class BubbleService : Service() {
     override fun onDestroy() {
         running = false
         snapAnim?.cancel()
+        BivoxAccessibilityService.listener = null
+        lens.close(); pick.close(); result.close()
+        hub.shutdown()
+        env.shutdown()
         closePanel()
         removeBubble()
         speaker?.shutdown()
@@ -298,7 +329,7 @@ class BubbleService : Service() {
                         }
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (moved) snapToEdge(v, lp) else openPanel()
+                        if (moved) snapToEdge(v, lp) else onBubbleTap()
                     }
                 }
                 return true
@@ -357,9 +388,9 @@ class BubbleService : Service() {
         val root = PanelRoot(this)
         root.layoutDirection = if (uiLang == "ar") View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         root.background = GradientDrawable().apply {
-            setColor(cBg)
+            setColor(Color.argb(0xC0, 0x13, 0x13, 0x18))
             cornerRadius = u * 3f
-            setStroke(max(1, (u * 0.4f).toInt()), cPrimary)
+            setStroke(max(1, (u * 0.35f).toInt()), Color.argb(0xAA, 0x5B, 0x8D, 0xEF))
         }
         val scroll = ScrollView(this)
         scroll.isVerticalScrollBarEnabled = false
@@ -367,13 +398,13 @@ class BubbleService : Service() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val body = LinearLayout(this)
         body.orientation = LinearLayout.VERTICAL
-        val m = px(3f)
+        val m = px(2.4f)
         body.setPadding(m, m, m, m)
         scroll.addView(body, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         panelBody = body
 
-        val width = min((s.first * 0.94f).toInt(), px(110f))
+        val width = min((s.first * 0.88f).toInt(), px(100f))
         // نافذة قابلة للتركيز كي تعمل لوحة المفاتيح؛ لا FLAG_ALT_FOCUSABLE_IM
         // Focusable window so the keyboard works; no FLAG_ALT_FOCUSABLE_IM
         val lp = WindowManager.LayoutParams(
@@ -455,6 +486,20 @@ class BubbleService : Service() {
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         add(body, head)
 
+        // صف الإجراءات: اختيار نص / الصفحة كلها / عدسة (تحتاج خدمة الوصول)
+        // Actions row: select text / whole page / lens (needs the accessibility service)
+        val acts = LinearLayout(this)
+        acts.orientation = LinearLayout.HORIZONTAL
+        val actNames = listOf("act_pick", "act_page", "act_lens")
+        val actCalls = listOf<() -> Unit>({ startPick() }, { translatePage() }, { toggleLens() })
+        for (i in actNames.indices) {
+            val b = smallButton(t.getValue(actNames[i])) { actCalls[i]() }
+            val alp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (i > 0) alp.marginStart = gap / 2
+            acts.addView(b, alp)
+        }
+        add(body, acts, gap)
+
         // اللغتان + التبديل / the two languages + swap
         val myPicker = picker({ myIdx }, { myIdx = it })
         val theirPicker = picker({ theirIdx }, { theirIdx = it })
@@ -480,11 +525,11 @@ class BubbleService : Service() {
             hint = t.getValue("hint")
             setHintTextColor(cMuted)
             setTextColor(cText)
-            sizeU(this, 4.2f)
+            sizeU(this, 3.8f)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setSingleLine(false); maxLines = 3
-            minHeight = px(11f)
-            setPadding(px(2.5f), px(2f), px(2.5f), px(2f))
+            minHeight = px(8.5f)
+            setPadding(px(2.2f), px(1.4f), px(2.2f), px(1.4f))
             background = rounded(cField, cFieldBorder)
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG
             imeOptions = EditorInfo.IME_ACTION_SEND
@@ -497,8 +542,8 @@ class BubbleService : Service() {
         add(body, et, gap)
 
         // الزران الكبيران / the two big buttons
-        val me = bigButton(t.getValue("btn_me"), cPrimary, cPrimaryPressed) { go(true) }
-        val they = bigButton(t.getValue("btn_they"), cAccent, cAccentPressed) { go(false) }
+        val me = bigButton(t.getValue("btn_me"), cPrimaryT, cPrimaryPressed) { go(true) }
+        val they = bigButton(t.getValue("btn_they"), cAccentT, cAccentPressed) { go(false) }
         meBtn = me; theyBtn = they
         me.isEnabled = !busy; they.isEnabled = !busy
         val btns = LinearLayout(this)
@@ -515,7 +560,7 @@ class BubbleService : Service() {
             card.orientation = LinearLayout.VERTICAL
             val cp = px(2.5f)
             card.setPadding(cp, cp, cp, cp)
-            card.background = rounded(cCard, cCardBorder)
+            card.background = rounded(cCardT, cCardBorder)
             val o = label(lastOrig, 3.8f, cOrig)
             val tr = label(lastTrans, 5.4f, cText, true)
             for (v in listOf(o, tr)) {
@@ -593,10 +638,10 @@ class BubbleService : Service() {
         TextView(this).apply {
             text = Langs.NAMES.getValue(Langs.CODES[getIdx()]) + " ▾"
             setTextColor(cText)
-            sizeU(this, 4.2f)
+            sizeU(this, 3.8f)
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = px(11f)
-            setPadding(px(2.5f), px(2f), px(2.5f), px(2f))
+            minHeight = px(8.5f)
+            setPadding(px(2.2f), px(1.4f), px(2.2f), px(1.4f))
             background = rounded(cField, cFieldBorder)
             isClickable = true
             setOnClickListener { buildList(getIdx(), setIdx) }
@@ -649,6 +694,100 @@ class BubbleService : Service() {
         buildMain()
     }
 
+    // ── الترجمة على الشاشة (تحتاج خدمة الوصول) / On-screen translation (needs the accessibility service) ──
+    private fun onBubbleTap() {
+        // الضغط والترجمات ظاهرة: يمسحها أولًا / tapping while translations are shown clears them first
+        if (result.showing) { result.close(); return }
+        openPanel()
+    }
+
+    private fun toast(msg: String) {
+        try { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() } catch (e: Exception) { }
+    }
+
+    // إن لم تُفعَّل الخدمة نشرح ونفتح إعدادات إمكانية الوصول / if the service is off, explain and open accessibility settings
+    private fun needReader(): Boolean {
+        if (BivoxAccessibilityService.instance != null) return false
+        toast(t.getValue("a11y_need"))
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) { }
+        closePanel()
+        return true
+    }
+
+    // نغلق اللوحة (تأخذ التركيز) وننتظر لحظة ليعود التركيز للتطبيق تحتها قبل قراءة الشاشة
+    // Close the panel (it holds focus) and wait a moment so focus returns to the app below before reading the screen
+    private fun readScreen(onBoxes: (List<TextBox>) -> Unit) {
+        closePanel()
+        main.postDelayed({
+            val reader = BivoxAccessibilityService.instance
+            if (reader == null) return@postDelayed
+            env.readPool.execute {
+                val boxes: List<TextBox> = try { reader.collect() } catch (e: Exception) { emptyList() }
+                main.post {
+                    if (boxes.isEmpty()) toast(t.getValue("pick_none")) else onBoxes(boxes)
+                }
+            }
+        }, 300)
+    }
+
+    private fun startPick() {
+        if (needReader()) return
+        result.close()
+        readScreen { boxes ->
+            pick.show(boxes, t.getValue("pick_hint"), { sel ->
+                pick.close()
+                showResults(sel.map { Item(it.text, it.rect) }, false)
+            }, { pick.close() })
+        }
+    }
+
+    private fun translatePage() {
+        if (needReader()) return
+        result.close()
+        readScreen { boxes ->
+            showResults(boxes.take(80).map { Item(it.text, it.rect) }, true)
+        }
+    }
+
+    private fun toggleLens() {
+        if (lens.showing) { lens.close(); closePanel(); return }
+        if (needReader()) return
+        closePanel()
+        lens.show()
+    }
+
+    // يعرض الترجمات فوق النصوص ويحدّثها تباعًا عند وصولها / shows translations over the texts and updates them as they arrive
+    private fun showResults(items: List<Item>, page: Boolean) {
+        if (items.isEmpty()) return
+        val dst = Langs.CODES[Prefs.my(this)]
+        val fallback = Langs.CODES[Prefs.their(this)]
+        val token = ++resultToken
+        val label = t.getValue("page_working")
+        var left = items.size
+        var failed = 0
+        result.show(items, if (page) "$label 0/${items.size}" else label)
+        for (it in items) {
+            hub.request(it.orig, dst, fallback) { r ->
+                if (token == resultToken) {
+                    if (r != null) it.trans = r else failed++
+                    left--
+                    if (left <= 0) {
+                        if (failed == items.size) {
+                            result.close()
+                            toast(t.getValue("fail"))
+                        } else {
+                            result.update(null)
+                        }
+                    } else {
+                        result.update("$label ${items.size - left}/${items.size}")
+                    }
+                }
+            }
+        }
+    }
+
     // ── أدوات التنسيق / Styling helpers ──
     private fun rounded(fill: Int, stroke: Int?): GradientDrawable = GradientDrawable().apply {
         setColor(fill)
@@ -687,9 +826,9 @@ class BubbleService : Service() {
             this.text = text
             isAllCaps = false
             minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
-            setPadding(px(3.5f), px(2.2f), px(3.5f), px(2.2f))
+            setPadding(px(2.6f), px(1.5f), px(2.6f), px(1.5f))
             setTextColor(cText)
-            sizeU(this, 4.2f)
+            sizeU(this, 3.6f)
             background = stateBg(cBtn, cBtnPressed, cBtnBorder)
             setOnClickListener { onClick() }
         }
@@ -699,9 +838,9 @@ class BubbleService : Service() {
             this.text = text
             isAllCaps = false
             minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
-            setPadding(px(2.5f), px(5f), px(2.5f), px(5f))
+            setPadding(px(2f), px(3.2f), px(2f), px(3.2f))
             setTypeface(typeface, Typeface.BOLD)
-            sizeU(this, 4.2f)
+            sizeU(this, 3.8f)
             setTextColor(ColorStateList(
                 arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
                 intArrayOf(cDisabledText, Color.WHITE)))

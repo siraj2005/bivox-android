@@ -58,6 +58,13 @@ object Ui {
             "bubble_started" to "الفقاعة تعمل — يمكنك الخروج من التطبيق",
             "bubble_stopped" to "تم إيقاف الفقاعة",
             "notif_text" to "الفقاعة العائمة تعمل", "notif_stop" to "إيقاف",
+            "act_pick" to "✂ اختر", "act_page" to "▤ الصفحة", "act_lens" to "🔍 عدسة",
+            "a11y_need" to "فعّل «BiVox» في إمكانية الوصول ثم ارجع. إن كان الخيار رماديًا: معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيّدة.",
+            "perm_a11y" to "قراءة الشاشة — خدمة إمكانية الوصول (للترجمة على الشاشة)",
+            "a11y_note" to "أندرويد 13+: إن كان الخيار رماديًا افتح «معلومات التطبيق» ثم ⋮ ثم «السماح بالإعدادات المقيّدة». الخدمة تقرأ الشاشة عند طلبك الترجمة فقط.",
+            "pick_hint" to "اضغط نصًا أو اسحب لتحديد عدة نصوص",
+            "pick_none" to "لا يوجد نص قابل للقراءة هنا (قد يكون صورة)",
+            "page_working" to "جاري الترجمة",
         ),
         "en" to mapOf(
             "title" to "BiVox — Conversation Translator", "i_speak" to "My language",
@@ -102,6 +109,13 @@ object Ui {
             "bubble_started" to "Bubble is on — you can leave the app",
             "bubble_stopped" to "Bubble stopped",
             "notif_text" to "Floating bubble is running", "notif_stop" to "Stop",
+            "act_pick" to "✂ Select", "act_page" to "▤ Page", "act_lens" to "🔍 Lens",
+            "a11y_need" to "Enable \"BiVox\" in Accessibility, then come back. If the option is greyed out: App info → ⋮ → Allow restricted settings.",
+            "perm_a11y" to "Screen reading — accessibility service (for on-screen translation)",
+            "a11y_note" to "Android 13+: if the option is greyed out, open \"App info\", then ⋮, then \"Allow restricted settings\". The service reads the screen only when you ask to translate.",
+            "pick_hint" to "Tap a text, or drag to select several",
+            "pick_none" to "No readable text here (it may be an image)",
+            "page_working" to "Translating",
         ),
     )
 }

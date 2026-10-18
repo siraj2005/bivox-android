@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.3.2 (المرحلة ب: الفقاعة العائمة / Phase B: floating bubble)
+# BiVox Android — الإصدار 0.4.0 (المرحلة ج: الترجمة على الشاشة / Phase C: on-screen translation)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
@@ -41,6 +41,12 @@ Face-to-face conversation translator: type text, pick the direction, and the tra
   A draggable bubble over all apps opens a mini translator panel; runs as a foreground service with a Stop action.
 - الأذونات: العرض فوق التطبيقات (مطلوب)، الإشعارات وتجاهل البطارية (موصى بهما) — شرحها في الشاشة الرئيسية.
   Permissions: display over apps (required), notifications and battery exemption (recommended) — guided on the main screen.
+
+## الترجمة على الشاشة / On-screen translation
+- «✂ اختر» يحدد نصًا أو عدة نصوص، «▤ الصفحة» تترجم كل نص ظاهر، و«🔍 عدسة» إطار يترجم ما يمرّ تحته أثناء التمرير (متحرك، أضلاعه قابلة للتغيير، وزر تثبيت).
+  Select text, translate the whole page, or use a lens frame that translates whatever scrolls under it (movable, resizable sides, with a pin button).
+- تُرسم الترجمة فوق النص الأصلي. تعمل عبر خدمة إمكانية الوصول (مفعّلة من الإعدادات) وتقرأ الشاشة عند الطلب فقط.
+  Translations are drawn over the original text. Needs the accessibility service (enabled in Settings); it reads the screen only on request.
 
 ## الهوية / Branding
 - ملفات الشعار الرسمية (SVG) في `branding/`؛ الأيقونة والشعار داخل التطبيق مولّدان منها.

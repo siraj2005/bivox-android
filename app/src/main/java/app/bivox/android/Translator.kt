@@ -28,6 +28,26 @@ class Translator {
         throw IOException("translation failed")
     }
 
+    // ترجمة مع كشف تلقائي للغة المصدر (للنص المقروء من الشاشة)؛ احتياطيًا نستعمل لغة الطرف الآخر
+    // Translation with automatic source-language detection (for text read from the screen); falls back to the other person's language
+    fun translateAuto(text: String, fallbackSrc: String, dst: String): String {
+        val t = text.trim()
+        if (t.isEmpty()) return ""
+        try {
+            val r = google(t, "auto", dst)
+            if (r.isNotEmpty()) return r
+        } catch (e: Exception) {
+            // نجرب المحرك التالي / try the next engine
+        }
+        try {
+            val r = myMemory(t, fallbackSrc, dst)
+            if (r.isNotEmpty()) return r
+        } catch (e: Exception) {
+            // نفشل بعد قليل / fail below
+        }
+        throw IOException("translation failed")
+    }
+
     private fun httpGet(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
         try {

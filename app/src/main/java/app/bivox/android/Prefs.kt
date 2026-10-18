@@ -51,4 +51,21 @@ object Prefs {
     fun setBubblePos(c: Context, x: Int, y: Int) {
         sp(c).edit().putInt("bx", x).putInt("by", y).apply()
     }
+
+    // مستطيل العدسة وتثبيتها / lens rectangle and its pin state
+    fun lens(c: Context): IntArray? {
+        val p = sp(c)
+        if (!p.contains("lr")) return null
+        return intArrayOf(p.getInt("ll", 0), p.getInt("lt", 0), p.getInt("lr", 0), p.getInt("lb", 0))
+    }
+
+    fun setLens(c: Context, l: Int, t: Int, r: Int, b: Int) {
+        sp(c).edit().putInt("ll", l).putInt("lt", t).putInt("lr", r).putInt("lb", b).apply()
+    }
+
+    fun lensPinned(c: Context): Boolean = sp(c).getBoolean("lens_pin", false)
+
+    fun setLensPinned(c: Context, v: Boolean) {
+        sp(c).edit().putBoolean("lens_pin", v).apply()
+    }
 }
