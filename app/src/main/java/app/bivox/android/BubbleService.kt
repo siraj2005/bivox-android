@@ -87,6 +87,8 @@ class BubbleService : Service() {
     // اللوحة / the panel
     private var panel: View? = null
     private var panelBody: LinearLayout? = null
+    private var panelLp: WindowManager.LayoutParams? = null
+    private var panelWidth = 0
     private var input: EditText? = null
     private var statusLbl: TextView? = null
     private var meBtn: Button? = null
@@ -218,7 +220,7 @@ class BubbleService : Service() {
     private fun measure() {
         val s = screen()
         u = max(3f, min(s.first, s.second) / 100f)
-        bubbleSize = (u * 13f).toInt()
+        bubbleSize = (u * 14f).toInt()
     }
 
     private fun px(units: Float): Int = max(1, (u * units).toInt())
@@ -232,17 +234,20 @@ class BubbleService : Service() {
         measure()
         val s = screen()
         val view = FrameLayout(this)
+        // شكل الفقاعة يطابق شكل الشعار (مربع بزوايا مدوّرة) ليملأه الشعار بلا فراغات
+        // The bubble shape matches the logo (rounded square) so the logo fills it with no gaps
         val bg = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = bubbleSize * 0.24f
             setColor(cCard)
-            setStroke(max(1, (u * 0.5f).toInt()), cPrimary)
+            setStroke(max(1, (u * 0.45f).toInt()), cPrimary)
         }
         view.background = bg
         view.alpha = 0.95f
         val img = ImageView(this)
         img.setImageResource(R.drawable.bivox_logo)
         img.contentDescription = "BiVox"
-        val pad = px(1.8f)
+        val pad = max(1, (u * 0.45f).toInt())
         img.setPadding(pad, pad, pad, pad)
         view.addView(img, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
 
@@ -366,8 +371,14 @@ class BubbleService : Service() {
             width, ViewGroup.LayoutParams.WRAP_CONTENT, overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT)
-        lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        lp.y = px(4f)
+        // موضع مطلق قابل للسحب (محفوظ بين الفتحات) / absolute draggable position (saved between openings)
+        lp.gravity = Gravity.TOP or Gravity.LEFT
+        panelWidth = width
+        val spx = Prefs.panelX(this)
+        val spy = Prefs.panelY(this)
+        lp.x = if (spx < 0) (s.first - width) / 2 else spx.coerceIn(0, max(0, s.first - width))
+        lp.y = if (spy < 0) px(4f) else spy.coerceIn(0, max(0, s.second - px(16f)))
+        panelLp = lp
         lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
 
         buildMain()
@@ -389,6 +400,7 @@ class BubbleService : Service() {
         }
         panel = null
         panelBody = null
+        panelLp = null
         input = null
         statusLbl = null
         meBtn = null
@@ -419,6 +431,13 @@ class BubbleService : Service() {
         val logoLp = LinearLayout.LayoutParams(px(8f), px(8f))
         logoLp.marginEnd = gap
         head.addView(logo, logoLp)
+        // «≡» مقبض السحب: اسحب الرأس لتحريك اللوحة / "≡" is the drag handle: drag the header to move the panel
+        val handle = label("≡", 6f, cMuted)
+        val hLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        hLp.marginEnd = gap
+        head.addView(handle, hLp)
+        head.setOnTouchListener(dragPanelListener())
         val title = label("BiVox", 4.8f, cText, true)
         title.textDirection = View.TEXT_DIRECTION_LTR
         title.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
@@ -508,6 +527,34 @@ class BubbleService : Service() {
         statusLbl = st
         add(body, st, gap)
         refreshStatus()
+    }
+
+    // سحب اللوحة من رأسها وحفظ موضعها / drags the panel by its header and saves its position
+    private fun dragPanelListener(): View.OnTouchListener = object : View.OnTouchListener {
+        var startX = 0
+        var startY = 0
+        var downX = 0f
+        var downY = 0f
+        override fun onTouch(v: View, e: MotionEvent): Boolean {
+            val lp = panelLp ?: return false
+            val p = panel ?: return false
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    startX = lp.x; startY = lp.y
+                    downX = e.rawX; downY = e.rawY
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val sc = screen()
+                    lp.x = (startX + e.rawX - downX).toInt().coerceIn(0, max(0, sc.first - panelWidth))
+                    lp.y = (startY + e.rawY - downY).toInt().coerceIn(0, max(0, sc.second - px(16f)))
+                    try { wm.updateViewLayout(p, lp) } catch (ex: Exception) { }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    Prefs.setPanelPos(this@BubbleService, lp.x, lp.y)
+            }
+            return true
+        }
     }
 
     // صفحة اختيار اللغة داخل اللوحة (بدل نافذة منبثقة) / language list page inside the panel (instead of a dialog)

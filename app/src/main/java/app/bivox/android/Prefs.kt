@@ -40,6 +40,14 @@ object Prefs {
     fun bubbleX(c: Context): Int = sp(c).getInt("bx", -1)
     fun bubbleY(c: Context): Int = sp(c).getInt("by", -1)
 
+    // موضع اللوحة المصغّرة (-1 = لم يُحفظ) / mini panel position (-1 = not saved yet)
+    fun panelX(c: Context): Int = sp(c).getInt("px", -1)
+    fun panelY(c: Context): Int = sp(c).getInt("py", -1)
+
+    fun setPanelPos(c: Context, x: Int, y: Int) {
+        sp(c).edit().putInt("px", x).putInt("py", y).apply()
+    }
+
     fun setBubblePos(c: Context, x: Int, y: Int) {
         sp(c).edit().putInt("bx", x).putInt("by", y).apply()
     }
