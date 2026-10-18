@@ -76,7 +76,9 @@ class BivoxAccessibilityService : AccessibilityService() {
         if (!txt.isNullOrEmpty() && txt.length <= 1000 && !n.isPassword && txt.any { it.isLetter() }) {
             val r = Rect()
             n.getBoundsInScreen(r)
-            if (r.width() > 4 && r.height() > 4 && seen.add("${r.left},${r.top},${r.right},${r.bottom}|$txt")) {
+            // نتجاهل نسخة متداخلة لنفس النص (حاوية وابنها) / skip a nested duplicate of the same text (a container and its child)
+            if (r.width() > 4 && r.height() > 4 && out.none { it.text == txt && Rect.intersects(it.rect, r) } &&
+                seen.add("${r.left},${r.top},${r.right},${r.bottom}|$txt")) {
                 out.add(TextBox(txt, r))
             }
         }

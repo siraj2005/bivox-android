@@ -13,6 +13,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -143,33 +144,62 @@ object Drawing {
 
     fun textPaint(color: Int): TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
 
-    // يملأ المستطيل بخلفية معتمة ويكتب الترجمة بأكبر خط يتسع فيه (لا يقل عن حد أدنى مقروء)
-    // Covers the rectangle with an opaque background and writes the translation in the largest font that fits (never below a readable minimum)
-    fun translation(c: Canvas, left: Float, top: Float, width: Float, height: Float,
+    // المساحة المتاحة للترجمة: ارتفاع النص الأصلي، ويزيد فقط حتى أقرب نص تحته كي لا تتداخل الترجمات
+    // Room available for a translation: the original text's height, growing only down to the nearest text below so translations never overlap
+    fun room(items: List<Item>, self: Item, u: Float): Float {
+        val r = self.rect
+        val w = max(r.width().toFloat(), u * 8f)
+        var limit = Float.MAX_VALUE
+        for (o in items) {
+            if (o === self) continue
+            val b = o.rect
+            if (b.top < r.bottom - 2) continue                       // ليس تحته / not below it
+            if (b.left >= r.left + w || b.right <= r.left) continue   // لا يتقاطع أفقيًا / no horizontal overlap
+            limit = min(limit, (b.top - r.top).toFloat())
+        }
+        return max(r.height().toFloat(), limit - 1f)
+    }
+
+    // يملأ المستطيل بخلفية معتمة ويكتب الترجمة بأكبر خط يتسع في المساحة المتاحة؛
+    // وإن لم تتسع حتى بأصغر خط مقروء تُقتطع بنقاط (…) بدل أن تتداخل مع غيرها
+    // Covers the rectangle with an opaque background and writes the translation in the largest font that fits the available room;
+    // if it does not fit even at the smallest readable font it is cut with an ellipsis (…) instead of overlapping others
+    fun translation(c: Canvas, left: Float, top: Float, width: Float, height: Float, maxHeight: Float,
                     text: String, u: Float, bg: Paint, tp: TextPaint) {
-        val pad = max(2f, u * 0.5f)
-        val w = max(width, u * 12f)
-        val minSize = u * 2.4f
+        val pad = max(2f, u * 0.4f)
+        val w = max(width, u * 8f)
+        val minSize = u * 2.2f
+        val avail = max(height, maxHeight)
         var size = min(u * 5f, max(minSize, height * 0.75f))
-        fun build(sz: Float): StaticLayout {
+        fun build(sz: Float, maxLines: Int): StaticLayout {
             tp.textSize = sz
-            return StaticLayout.Builder
+            val b = StaticLayout.Builder
                 .obtain(text, 0, text.length, tp, max(1, (w - 2 * pad).toInt()))
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
                 .setIncludePad(false)
-                .build()
+            if (maxLines > 0) {
+                b.setMaxLines(maxLines)
+                b.setEllipsize(TextUtils.TruncateAt.END)
+            }
+            return b.build()
         }
-        var layout = build(size)
-        while (layout.height > height - pad && size > minSize) {
+        var layout = build(size, 0)
+        while (layout.height + 2 * pad > avail && size > minSize) {
             size = max(minSize, size - u * 0.3f)
-            layout = build(size)
+            layout = build(size, 0)
         }
-        val h = max(height, layout.height + 2 * pad)
+        if (layout.height + 2 * pad > avail) {
+            val lineH = max(1f, layout.height.toFloat() / max(1, layout.lineCount))
+            val lines = max(1, ((avail - 2 * pad) / lineH).toInt())
+            layout = build(size, lines)
+        }
+        val h = min(avail, max(height, layout.height + 2 * pad))
         val rad = u * 0.8f
-        c.drawRoundRect(left, top, left + w, top + h, rad, rad, bg)
+        // الخلفية أوسع بقليل لتغطي حواف النص الأصلي / the background is slightly larger to cover the original text's edges
+        c.drawRoundRect(left - 1f, top - 1f, left + w + 1f, top + h + 1f, rad, rad, bg)
         c.save()
-        c.translate(left + pad, top + pad)
+        c.translate(left + pad, top + max(pad, (h - layout.height) / 2f))
         layout.draw(c)
         c.restore()
     }

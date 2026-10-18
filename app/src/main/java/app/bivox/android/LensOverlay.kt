@@ -301,7 +301,7 @@ class LensOverlay(private val env: Env, private val hub: TranslateHub) {
                 val tr = it.trans ?: continue
                 if (tr.trim().equals(it.orig.trim(), ignoreCase = true)) continue
                 Drawing.translation(canvas, (it.rect.left - loc[0]).toFloat(), (it.rect.top - loc[1]).toFloat(),
-                    it.rect.width().toFloat(), it.rect.height().toFloat(), tr, u, bg, tp)
+                    it.rect.width().toFloat(), it.rect.height().toFloat(), Drawing.room(items, it, u), tr, u, bg, tp)
             }
             canvas.restore()
 

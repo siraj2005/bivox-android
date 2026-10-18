@@ -69,7 +69,7 @@ class ResultView(ctx: Context, private val u: Float) : View(ctx) {
             val tr = it.trans ?: continue
             if (tr.trim().equals(it.orig.trim(), ignoreCase = true)) continue   // لغتك نفسها: لا نغطيه / already your language: don't cover it
             Drawing.translation(canvas, (it.rect.left - ox).toFloat(), (it.rect.top - oy).toFloat(),
-                it.rect.width().toFloat(), it.rect.height().toFloat(), tr, u, bg, tp)
+                it.rect.width().toFloat(), it.rect.height().toFloat(), Drawing.room(items, it, u), tr, u, bg, tp)
         }
         val b = busy
         if (b != null) Drawing.pill(canvas, b, width / 2f, u * 7f, u, pillBg, tp)

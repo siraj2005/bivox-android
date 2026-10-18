@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.4.0 (المرحلة ج: الترجمة على الشاشة / Phase C: on-screen translation)
+# BiVox Android — الإصدار 0.4.1 (المرحلة ج: الترجمة على الشاشة / Phase C: on-screen translation)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
