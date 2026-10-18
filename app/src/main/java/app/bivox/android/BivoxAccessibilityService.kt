@@ -64,29 +64,7 @@ class BivoxAccessibilityService : AccessibilityService() {
                 // نكتفي بما جُمع / keep what was collected
             }
         }
-        return resolveOverlaps(out)
-    }
-
-    // الأكبر يفوز: صفحات الويب تُظهر الفقرة وأجزاءها (روابط ونص غامق) كعقد منفصلة فتتراكب ترجماتها.
-    // نُبقي العقدة الأكبر (الجملة الكاملة، فترجمتها أفضل) ونسقط ما يتداخل معها بنسبة كبيرة.
-    // Largest wins: web pages expose a paragraph and its parts (links, bold text) as separate nodes, so their translations pile up.
-    // We keep the largest node (the whole sentence, which translates better) and drop what largely overlaps it.
-    private fun resolveOverlaps(all: List<TextBox>): List<TextBox> {
-        val sorted = all.sortedByDescending { it.rect.width().toLong() * it.rect.height() }
-        val kept = ArrayList<TextBox>()
-        for (b in sorted) {
-            val area = b.rect.width().toLong() * b.rect.height()
-            var drop = false
-            val inter = Rect()
-            for (k in kept) {
-                if (inter.setIntersect(b.rect, k.rect)) {
-                    val ia = inter.width().toLong() * inter.height()
-                    if (ia * 100 >= area * 35) { drop = true; break }
-                }
-            }
-            if (!drop) kept.add(b)
-        }
-        return kept.sortedWith(compareBy({ it.rect.top }, { it.rect.left }))
+        return out
     }
 
     private fun walk(n: AccessibilityNodeInfo, depth: Int, out: ArrayList<TextBox>, seen: HashSet<String>) {
@@ -98,9 +76,7 @@ class BivoxAccessibilityService : AccessibilityService() {
         if (!txt.isNullOrEmpty() && txt.length <= 1000 && !n.isPassword && txt.any { it.isLetter() }) {
             val r = Rect()
             n.getBoundsInScreen(r)
-            // نتجاهل نسخة متداخلة لنفس النص (حاوية وابنها) / skip a nested duplicate of the same text (a container and its child)
-            if (r.width() > 4 && r.height() > 4 && out.none { it.text == txt && Rect.intersects(it.rect, r) } &&
-                seen.add("${r.left},${r.top},${r.right},${r.bottom}|$txt")) {
+            if (r.width() > 4 && r.height() > 4 && seen.add("${r.left},${r.top},${r.right},${r.bottom}|$txt")) {
                 out.add(TextBox(txt, r))
             }
         }
