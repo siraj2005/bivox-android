@@ -1,7 +1,9 @@
 package app.bivox.android
 
 import android.app.Activity
+import android.app.StatusBarManager
 import android.app.AlertDialog
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -9,6 +11,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Icon
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Build
@@ -79,9 +82,12 @@ class MainActivity : Activity() {
     private lateinit var t: Map<String, String>
 
     private val translator = Translator()
-    private lateinit var speaker: Speaker
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+    // مستمعا النطق المشترك (الشاشة والفقاعة تتشاركان نسخة واحدة تُنشأ عند أول نطق)
+    // Listeners for the shared speech (the screen and the bubble share one instance created on first speech)
+    private val voiceReady: () -> Unit = { main.post { refreshStatus() } }
+    private val voiceFail: (String) -> Unit = { _ -> main.post { if (!isFinishing) setStatus("speak_fail") } }
 
     // ── عناصر الواجهة / Views ──
     private lateinit var input: EditText
@@ -100,12 +106,14 @@ class MainActivity : Activity() {
         uiLang = Prefs.uiLang(this)
         myIdx = Prefs.my(this)
         theirIdx = Prefs.their(this)
-        speaker = Speaker(this,
-            onReady = { main.post { refreshStatus() } },
-            onFail = { main.post { if (!isFinishing) setStatus("speak_fail") } })
+        Speech.acquire()
+        Speech.listen(voiceReady, voiceFail)
         buildUi()
         // تحقق صامت من التحديث عند فتح التطبيق / silent update check when the app opens
         if (savedInstanceState == null) checkUpdate(false)
+        // نهيّئ النطق بعد لحظة (لا يبطئ الفتح) كي يكون جاهزًا عند أول ترجمة
+        // Warm up speech a moment later (does not slow the launch) so it is ready by the first translation
+        main.postDelayed({ if (!isFinishing && Prefs.autoSpeak(this)) Speech.get(this) }, 1500)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -125,12 +133,13 @@ class MainActivity : Activity() {
         if (::statusLbl.isInitialized && permSig() != lastSig) rebuildUi()
         if (voiceRefreshNeeded) {
             voiceRefreshNeeded = false
-            speaker.refresh()
+            Speech.peek()?.refresh()
         }
     }
 
     override fun onDestroy() {
-        speaker.shutdown()
+        Speech.unlisten(voiceReady, voiceFail)
+        Speech.release()
         io.shutdownNow()
         super.onDestroy()
     }
@@ -392,11 +401,7 @@ class MainActivity : Activity() {
         add(body, label(t.getValue("history"), 3.4f, cMuted), gap)
         histBox = LinearLayout(this)
         histBox.orientation = LinearLayout.VERTICAL
-        for ((i, line) in history.withIndex()) {
-            val v = label(line, 4.2f, cOrig)
-            v.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
-            add(histBox, v, if (i == 0) 0 else px(1.5f))
-        }
+        fillHistory()
         add(body, histBox, gap)
 
         updatePickers()
@@ -408,7 +413,7 @@ class MainActivity : Activity() {
     private fun refreshStatus() {
         if (!::statusLbl.isInitialized) return
         var s = t.getValue(statusKey)
-        if (statusKey == "ready" && !speaker.available) s += "  " + t.getValue("speak_off")
+        if (statusKey == "ready" && Speech.peek()?.available == false) s += "  " + t.getValue("speak_off")
         statusLbl.text = s
     }
 
@@ -423,6 +428,7 @@ class MainActivity : Activity() {
         val text = input.text.toString().trim()
         if (text.isEmpty()) { setStatus("empty"); return }
         if (myIdx == theirIdx) { setStatus("same"); return }
+        if (!Net.online(this)) { setStatus("offline"); return }
         val my = Langs.CODES[myIdx]
         val their = Langs.CODES[theirIdx]
         val src = if (meToThem) my else their
@@ -447,21 +453,35 @@ class MainActivity : Activity() {
         lastOrig = orig; lastTrans = out; lastDst = dst
         origLbl.text = orig; transLbl.text = out
         input.setText("")
-        val r = speaker.say(out, dst)
-        statusKey = if (r == SpeakResult.NO_VOICE) "no_voice" else "ready"
+        statusKey = "ready"
+        if (Prefs.autoSpeak(this)) {
+            Speech.say(this, out, dst, main) { r ->
+                if (r == SpeakResult.NO_VOICE && !isFinishing) setStatus("no_voice")
+            }
+        }
         // سطر في السجل (الأحدث أولًا، بحد أقصى 20) / history line (newest first, max 20)
         history.add(0, "${Langs.NAMES.getValue(src)} ➜ ${Langs.NAMES.getValue(dst)}:  $orig  →  $out")
         while (history.size > 20) history.removeAt(history.size - 1)
-        rebuildUi()
+        // نحدّث ما تغيّر فقط: لا إعادة بناء للشاشة فلا يتحرك شيء ولا يضيع التمرير
+        // Update only what changed: no full rebuild, so nothing jumps and the scroll position is kept
+        fillHistory()
+        refreshStatus()
+    }
+
+    private fun fillHistory() {
+        histBox.removeAllViews()
+        for ((i, line) in history.withIndex()) {
+            val v = label(line, 4.2f, cOrig)
+            v.textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            add(histBox, v, if (i == 0) 0 else px(1.5f))
+        }
     }
 
     // ── النطق اليدوي / Manual speech ──
     private fun speakLast() {
         if (lastTrans.isEmpty()) return
-        when (speaker.say(lastTrans, lastDst)) {
-            SpeakResult.NO_VOICE -> showVoiceHelp(lastDst)
-            SpeakResult.NO_ENGINE -> showVoiceHelp(lastDst)
-            else -> {}
+        Speech.say(this, lastTrans, lastDst, main) { r ->
+            if (r == SpeakResult.NO_VOICE || r == SpeakResult.NO_ENGINE) showVoiceHelp(lastDst)
         }
     }
 
@@ -482,9 +502,15 @@ class MainActivity : Activity() {
     // Shows the installed engines and each language's voice state, and opens speech settings if needed
     private fun showVoiceDiag() {
         if (isFinishing) return
+        // أول استعمال: ننشئ المحركات وننتظر لحظة ليكون التقرير صحيحًا / first use: create the engines and wait a moment so the report is accurate
+        if (Speech.peek() == null) {
+            Speech.get(this)
+            main.postDelayed({ showVoiceDiag() }, 900)
+            return
+        }
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle(t.getValue("diag_title"))
-            .setMessage(t.getValue("diag_legend") + "\n\n" + speaker.report())
+            .setMessage(t.getValue("diag_legend") + "\n\n" + Speech.get(this).report())
             .setPositiveButton(t.getValue("voice_settings")) { _, _ -> openVoiceSettings() }
             .setNegativeButton(t.getValue("close"), null)
             .show()
@@ -613,12 +639,76 @@ class MainActivity : Activity() {
         add(card, smallButton(t.getValue("app_info")) { openAppInfo() }, gap,
             width = ViewGroup.LayoutParams.WRAP_CONTENT)
 
+        // زر القائمة السريعة / Quick Settings tile
+        val tileNote = label(t.getValue("tile_desc"), 3.2f, cMuted)
+        tileNote.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(card, tileNote, gap)
+        if (Build.VERSION.SDK_INT >= 33) {
+            add(card, smallButton(t.getValue("tile_add")) { requestAddTile() }, gap,
+                width = ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
         val on = BubbleService.running
         val toggle = bigButton(t.getValue(if (on) "bubble_stop" else "bubble_start"),
             if (on) cBtn else cAccent, if (on) cBtnPressed else cAccentPressed) { toggleBubble() }
         add(card, toggle, gap)
         add(body, card, gap)
+        buildSettingsSection(body, m, gap)
         lastSig = permSig()
+    }
+
+    // أندرويد 13+: يطلب من النظام إضافة الزر إلى القائمة السريعة مباشرة
+    // Android 13+: asks the system to add the tile to Quick Settings directly
+    private fun requestAddTile() {
+        if (Build.VERSION.SDK_INT < 33) return
+        try {
+            val sbm = getSystemService(StatusBarManager::class.java)
+            sbm.requestAddTileService(ComponentName(this, BubbleTile::class.java), "BiVox",
+                Icon.createWithResource(this, R.drawable.ic_stat_bivox), mainExecutor) { _ -> }
+        } catch (e: Exception) {
+            // يبقى الشرح اليدوي / the manual instructions remain
+        }
+    }
+
+    // صف إعداد: النص + زر يدور بين القيم / a settings row: the label + a button that cycles through the values
+    private fun cycleRow(parent: LinearLayout, labelKey: String, gap: Int, current: () -> String, onTap: () -> Unit) {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        val lbl = label(t.getValue(labelKey), 3.8f, cOrig)
+        lbl.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        add(row, lbl, weight = 1f, width = 0)
+        val btn = smallButton(current()) { }
+        btn.setOnClickListener {
+            onTap()
+            btn.text = current()
+        }
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.marginStart = gap
+        row.addView(btn, lp)
+        add(parent, row, gap)
+    }
+
+    // الإعدادات: حجم الفقاعة وشفافيتها والنطق التلقائي / settings: bubble size, opacity and automatic speech
+    private fun buildSettingsSection(body: LinearLayout, m: Int, gap: Int) {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setPadding(m, m, m, m)
+        card.background = rounded(cCard, cCardBorder)
+        add(card, label(t.getValue("set_title"), 4.6f, cText, true))
+        cycleRow(card, "set_size", gap, { t.getValue("size_" + Prefs.bubbleScale(this)) }) {
+            Prefs.setBubbleLook(this, (Prefs.bubbleScale(this) + 1) % 3, Prefs.bubbleAlpha(this))
+            BubbleService.reload(this)
+        }
+        cycleRow(card, "set_alpha", gap, { t.getValue("alpha_" + Prefs.bubbleAlpha(this)) }) {
+            Prefs.setBubbleLook(this, Prefs.bubbleScale(this), (Prefs.bubbleAlpha(this) + 1) % 3)
+            BubbleService.reload(this)
+        }
+        cycleRow(card, "set_speak", gap, { t.getValue(if (Prefs.autoSpeak(this)) "on" else "off") }) {
+            Prefs.setAutoSpeak(this, !Prefs.autoSpeak(this))
+        }
+        add(body, card, gap)
     }
 
     private fun toggleBubble() {
@@ -702,6 +792,12 @@ class MainActivity : Activity() {
     // ── التحديث التلقائي / Auto-update ──
     private fun checkUpdate(manual: Boolean) {
         if (checkingUpdate || updating) return
+        if (!manual) {
+            // فحص صامت مرة كل 6 ساعات فقط: أخف على البطارية والشبكة / silent check only every 6 hours: lighter on battery and network
+            val now = System.currentTimeMillis()
+            if (now - Prefs.lastUpdateCheck(this) < 6 * 3600 * 1000L) return
+            Prefs.setLastUpdateCheck(this, now)
+        }
         checkingUpdate = true
         if (manual) setStatus("update_checking")
         io.execute {

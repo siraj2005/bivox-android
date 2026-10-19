@@ -1,4 +1,4 @@
-# BiVox Android — الإصدار 0.4.3 (المرحلة ج: الترجمة على الشاشة / Phase C: on-screen translation)
+# BiVox Android — الإصدار 0.5.0 (المرحلة ج: الترجمة على الشاشة / Phase C: on-screen translation)
 
 مترجم محادثة وجهًا لوجه: اكتب نصًا، اختر الاتجاه («أنا ➜ هو» أو «هو ➜ أنا»)، فتظهر الترجمة بخط كبير وتُنطق إن توفر محرك نطق.
 Face-to-face conversation translator: type text, pick the direction, and the translation appears in large text and is spoken if a TTS engine exists.
@@ -51,3 +51,9 @@ Face-to-face conversation translator: type text, pick the direction, and the tra
 ## الهوية / Branding
 - ملفات الشعار الرسمية (SVG) في `branding/`؛ الأيقونة والشعار داخل التطبيق مولّدان منها.
   The official logo files (SVG) are in `branding/`; the app icon and in-app logo are generated from them.
+
+## تحسينات 0.5.0 / 0.5.0 polish
+- زر «BiVox» في القائمة السريعة لتشغيل الفقاعة وإيقافها يدويًا. / A BiVox Quick Settings tile starts/stops the bubble manually.
+- زر «⚡ تلقائي» في اللوحة يكتشف لغة النص، ونسخ ومسح، وفتح لوحة المفاتيح تلقائيًا. / An "Auto" button detects the language; copy/clear; the keyboard opens automatically.
+- نسخة نطق واحدة مشتركة، إعادة محاولة للترجمة وذاكرة للجمل المتكررة، فحص التحديث كل 6 ساعات، وإيقاف العدسة عند انطفاء الشاشة. / One shared speech instance, translation retries and a cache, update check every 6 hours, and the lens pauses when the screen is off.
+- إعدادات: حجم الفقاعة وشفافيتها والنطق التلقائي. / Settings: bubble size, opacity, and automatic speech.

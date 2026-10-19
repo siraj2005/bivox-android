@@ -68,4 +68,27 @@ object Prefs {
     fun setLensPinned(c: Context, v: Boolean) {
         sp(c).edit().putBoolean("lens_pin", v).apply()
     }
+
+    // آخر فحص تحديث (ملّي ثانية) / last update check (ms)
+    fun lastUpdateCheck(c: Context): Long = sp(c).getLong("upd_last", 0L)
+
+    fun setLastUpdateCheck(c: Context, v: Long) {
+        sp(c).edit().putLong("upd_last", v).apply()
+    }
+
+    // النطق التلقائي بعد الترجمة / speak automatically after translating
+    fun autoSpeak(c: Context): Boolean = sp(c).getBoolean("autospeak", true)
+
+    fun setAutoSpeak(c: Context, v: Boolean) {
+        sp(c).edit().putBoolean("autospeak", v).apply()
+    }
+
+    // حجم الفقاعة (0 صغير، 1 متوسط، 2 كبير) وشفافيتها (0 كاملة، 1 متوسطة، 2 خفيفة)
+    // Bubble size (0 small, 1 medium, 2 large) and opacity (0 full, 1 medium, 2 light)
+    fun bubbleScale(c: Context): Int = sp(c).getInt("bscale", 1).coerceIn(0, 2)
+    fun bubbleAlpha(c: Context): Int = sp(c).getInt("balpha", 0).coerceIn(0, 2)
+
+    fun setBubbleLook(c: Context, scale: Int, alpha: Int) {
+        sp(c).edit().putInt("bscale", scale).putInt("balpha", alpha).apply()
+    }
 }

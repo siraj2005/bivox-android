@@ -41,6 +41,19 @@ class LensOverlay(private val env: Env, private val hub: TranslateHub) {
     private val refreshRun = Runnable { refresh() }
 
     val showing: Boolean get() = view != null
+    private var paused = false
+
+    // الشاشة انطفأت: لا قراءة ولا ترجمة / screen went off: no reading, no translating
+    fun pause() {
+        paused = true
+        env.main.removeCallbacks(refreshRun)
+        gen++
+    }
+
+    fun resume() {
+        paused = false
+        if (view != null) scheduleRefresh(300)
+    }
 
     fun show() {
         if (view != null) return
@@ -98,6 +111,7 @@ class LensOverlay(private val env: Env, private val hub: TranslateHub) {
     // Screen events: on scroll clear the old items at once, then re-read after the motion stops
     fun onScreenEvent(type: Int) {
         val v = view ?: return
+        if (paused) return
         if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             v.items = emptyList()
             v.invalidate()
@@ -122,6 +136,7 @@ class LensOverlay(private val env: Env, private val hub: TranslateHub) {
     // يقرأ نصوص الشاشة داخل الإطار ويترجمها ويرسمها / reads the on-screen texts inside the frame, translates and draws them
     private fun refresh() {
         val v = view ?: return
+        if (paused) return
         val reader = BivoxAccessibilityService.instance ?: return
         val myGen = ++gen
         env.readPool.execute {

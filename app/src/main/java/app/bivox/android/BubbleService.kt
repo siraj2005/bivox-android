@@ -6,7 +6,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.ColorStateList
@@ -80,7 +84,10 @@ class BubbleService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private val translator = Translator()
-    private var speaker: Speaker? = null
+    // مستمعا النطق المشترك / listeners for the shared speech
+    private val voiceReady: () -> Unit = { main.post { refreshStatus() } }
+    private val voiceFail: (String) -> Unit = { _ -> main.post { if (panel != null) setStatus("speak_fail") } }
+    private var screenReceiver: BroadcastReceiver? = null
     private lateinit var env: Env
     private lateinit var hub: TranslateHub
     private lateinit var result: ResultOverlay
@@ -107,6 +114,7 @@ class BubbleService : Service() {
     private var statusLbl: TextView? = null
     private var meBtn: Button? = null
     private var theyBtn: Button? = null
+    private var autoBtn: Button? = null
     private var myIdx = 0
     private var theirIdx = 1
     private var lastOrig = ""
@@ -136,9 +144,9 @@ class BubbleService : Service() {
             }
             lens.onScreenEvent(type)
         }
-        speaker = Speaker(this,
-            onReady = { main.post { refreshStatus() } },
-            onFail = { main.post { if (panel != null) setStatus("speak_fail") } })
+        Speech.acquire()
+        Speech.listen(voiceReady, voiceFail)
+        registerScreenReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -163,6 +171,11 @@ class BubbleService : Service() {
         if (!canOverlay(this)) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RELOAD) {
+            // تغيّر الحجم/الشفافية في الإعدادات: نعيد بناء الفقاعة / size/opacity changed in settings: rebuild the bubble
+            closePanel()
+            removeBubble()
         }
         if (bubble == null) {
             try {
@@ -202,8 +215,10 @@ class BubbleService : Service() {
         env.shutdown()
         closePanel()
         removeBubble()
-        speaker?.shutdown()
-        speaker = null
+        Speech.unlisten(voiceReady, voiceFail)
+        Speech.release()
+        screenReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) { } }
+        screenReceiver = null
         io.shutdownNow()
         super.onDestroy()
     }
@@ -253,7 +268,8 @@ class BubbleService : Service() {
     private fun measure() {
         val s = screen()
         u = max(3f, min(s.first, s.second) / 100f)
-        bubbleSize = (u * 14f).toInt()
+        val f = when (Prefs.bubbleScale(this)) { 0 -> 11f; 2 -> 17f; else -> 14f }
+        bubbleSize = (u * f).toInt()
     }
 
     private fun px(units: Float): Int = max(1, (u * units).toInt())
@@ -276,7 +292,7 @@ class BubbleService : Service() {
             setStroke(ring, cPrimary)
         }
         view.background = bg
-        view.alpha = 0.95f
+        view.alpha = when (Prefs.bubbleAlpha(this)) { 1 -> 0.75f; 2 -> 0.5f; else -> 0.95f }
         val img = ImageView(this)
         img.setImageResource(R.drawable.bivox_logo)
         img.contentDescription = "BiVox"
@@ -430,6 +446,8 @@ class BubbleService : Service() {
         }
         panel = root
         bubble?.visibility = View.GONE
+        // نهيّئ النطق أثناء كتابة المستخدم ليكون جاهزًا / warm up speech while the user types so it is ready
+        if (Prefs.autoSpeak(this)) Speech.get(this)
     }
 
     private fun closePanel() {
@@ -445,6 +463,7 @@ class BubbleService : Service() {
         statusLbl = null
         meBtn = null
         theyBtn = null
+        autoBtn = null
         bubble?.visibility = View.VISIBLE
     }
 
@@ -535,23 +554,35 @@ class BubbleService : Service() {
             imeOptions = EditorInfo.IME_ACTION_SEND
             setText(draft)
             setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_SEND) { go(true); true } else false
+                if (actionId == EditorInfo.IME_ACTION_SEND) { goAuto(); true } else false
             }
         }
         input = et
-        add(body, et, gap)
+        val inRow = LinearLayout(this)
+        inRow.orientation = LinearLayout.HORIZONTAL
+        inRow.gravity = Gravity.CENTER_VERTICAL
+        add(inRow, et, weight = 1f, width = 0)
+        val clrLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        clrLp.marginStart = gap / 2
+        inRow.addView(smallButton("⌫") { input?.setText(""); draft = "" }, clrLp)
+        add(body, inRow, gap)
 
         // الزران الكبيران / the two big buttons
         val me = bigButton(t.getValue("btn_me"), cPrimaryT, cPrimaryPressed) { go(true) }
         val they = bigButton(t.getValue("btn_they"), cAccentT, cAccentPressed) { go(false) }
-        meBtn = me; theyBtn = they
-        me.isEnabled = !busy; they.isEnabled = !busy
+        val auto = bigButton(t.getValue("btn_auto"), cBtn, cBtnPressed) { goAuto() }
+        meBtn = me; theyBtn = they; autoBtn = auto
+        me.isEnabled = !busy; they.isEnabled = !busy; auto.isEnabled = !busy
         val btns = LinearLayout(this)
         btns.orientation = LinearLayout.HORIZONTAL
         add(btns, me, weight = 1f, width = 0)
         val theyLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        theyLp.marginStart = gap
+        theyLp.marginStart = gap / 2
         btns.addView(they, theyLp)
+        val autoLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        autoLp.marginStart = gap / 2
+        btns.addView(auto, autoLp)
         add(body, btns, gap)
 
         // النتيجة / result
@@ -570,10 +601,23 @@ class BubbleService : Service() {
             }
             add(card, o)
             add(card, tr, px(1.5f))
-            add(card, smallButton(t.getValue("speak")) {
-                val r = speaker?.say(lastTrans, lastDst)
-                if (r == SpeakResult.NO_VOICE || r == SpeakResult.NO_ENGINE) setStatus("no_voice")
-            }, px(1.5f), width = ViewGroup.LayoutParams.WRAP_CONTENT)
+            val actRow = LinearLayout(this)
+            actRow.orientation = LinearLayout.HORIZONTAL
+            actRow.addView(smallButton(t.getValue("speak")) {
+                Speech.say(this, lastTrans, lastDst, main) { r ->
+                    if (r == SpeakResult.NO_VOICE || r == SpeakResult.NO_ENGINE) setStatus("no_voice")
+                }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val cpLp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            cpLp.marginStart = gap
+            actRow.addView(smallButton(t.getValue("copy")) {
+                try {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("BiVox", lastTrans))
+                    setStatus("copied")
+                } catch (e: Exception) { }
+            }, cpLp)
+            add(card, actRow, px(1.5f), width = ViewGroup.LayoutParams.WRAP_CONTENT)
             add(body, card, gap)
         }
 
@@ -581,6 +625,20 @@ class BubbleService : Service() {
         statusLbl = st
         add(body, st, gap)
         refreshStatus()
+        focusInput()
+    }
+
+    // يفتح لوحة المفاتيح تلقائيًا ليكتب المستخدم فورًا / opens the keyboard automatically so the user can type at once
+    private fun focusInput() {
+        main.postDelayed({
+            val v = input ?: return@postDelayed
+            if (panel == null) return@postDelayed
+            try {
+                v.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
+            } catch (e: Exception) { }
+        }, 250)
     }
 
     // سحب اللوحة من رأسها وحفظ موضعها / drags the panel by its header and saves its position
@@ -651,7 +709,7 @@ class BubbleService : Service() {
     private fun refreshStatus() {
         val s = statusLbl ?: return
         var txt = t.getValue(statusKey)
-        if (statusKey == "ready" && speaker?.available != true) txt += "  " + t.getValue("speak_off")
+        if (statusKey == "ready" && Speech.peek()?.available == false) txt += "  " + t.getValue("speak_off")
         s.text = txt
     }
 
@@ -660,38 +718,72 @@ class BubbleService : Service() {
         refreshStatus()
     }
 
-    private fun go(meToThem: Boolean) {
+    // اتجاه يدوي: أنا ➜ هو أو هو ➜ أنا / manual direction: me ➜ them or them ➜ me
+    private fun go(meToThem: Boolean) = translateWith { text, my, their ->
+        if (meToThem) Pair(translator.translate(text, my, their), their)
+        else Pair(translator.translate(text, their, my), my)
+    }
+
+    // تلقائي: يكتشف لغة النص ويترجمه إلى اللغة الأخرى / auto: detects the text's language and translates to the other one
+    private fun goAuto() = translateWith { text, my, their -> translator.translateSmart(text, my, their) }
+
+    private fun setBusyButtons(b: Boolean) {
+        meBtn?.isEnabled = !b; theyBtn?.isEnabled = !b; autoBtn?.isEnabled = !b
+    }
+
+    private fun translateWith(job: (String, String, String) -> Pair<String, String>) {
         if (busy) return
         val text = input?.text?.toString()?.trim() ?: return
         if (text.isEmpty()) { setStatus("empty"); return }
         if (myIdx == theirIdx) { setStatus("same"); return }
+        if (!Net.online(this)) { setStatus("offline"); return }
         val my = Langs.CODES[myIdx]
         val their = Langs.CODES[theirIdx]
-        val src = if (meToThem) my else their
-        val dst = if (meToThem) their else my
         busy = true
-        meBtn?.isEnabled = false; theyBtn?.isEnabled = false
+        setBusyButtons(true)
         setStatus("working")
         io.execute {
-            val out: String? = try {
-                translator.translate(text, src, dst)
+            val res: Pair<String, String>? = try {
+                job(text, my, their)
             } catch (e: Exception) {
                 null
             }
-            main.post { onDone(text, out, dst) }
+            main.post { onDone(text, res?.first, res?.second ?: their) }
         }
     }
 
     private fun onDone(orig: String, out: String?, dst: String) {
         busy = false
-        meBtn?.isEnabled = true; theyBtn?.isEnabled = true
+        setBusyButtons(false)
         if (panel == null) return
         if (out == null) { setStatus("fail"); return }
         lastOrig = orig; lastTrans = out; lastDst = dst
         draft = ""
-        val r = speaker?.say(out, dst)
-        statusKey = if (r == SpeakResult.NO_VOICE) "no_voice" else "ready"
+        statusKey = "ready"
+        if (Prefs.autoSpeak(this)) {
+            Speech.say(this, out, dst, main) { r -> if (r == SpeakResult.NO_VOICE) setStatus("no_voice") }
+        }
         buildMain()
+    }
+
+    // انطفاء الشاشة: نوقف قراءة العدسة ونمسح الترجمات لتوفير البطارية
+    // Screen off: pause the lens reading and clear translations to save battery
+    private fun registerScreenReceiver() {
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                when (i?.action) {
+                    Intent.ACTION_SCREEN_OFF -> { lens.pause(); result.close() }
+                    Intent.ACTION_SCREEN_ON -> lens.resume()
+                }
+            }
+        }
+        try {
+            val f = IntentFilter()
+            f.addAction(Intent.ACTION_SCREEN_OFF)
+            f.addAction(Intent.ACTION_SCREEN_ON)
+            registerReceiver(r, f)
+            screenReceiver = r
+        } catch (e: Exception) { }
     }
 
     // ── الترجمة على الشاشة (تحتاج خدمة الوصول) / On-screen translation (needs the accessibility service) ──
@@ -850,6 +942,7 @@ class BubbleService : Service() {
 
     companion object {
         const val ACTION_STOP = "app.bivox.android.STOP_BUBBLE"
+        const val ACTION_RELOAD = "app.bivox.android.RELOAD_BUBBLE"
         private const val CHANNEL = "bubble"
         private const val NOTIF_ID = 1
 
@@ -861,8 +954,16 @@ class BubbleService : Service() {
         fun canOverlay(c: Context): Boolean =
             try { Settings.canDrawOverlays(c) } catch (e: Exception) { false }
 
-        fun start(c: Context) {
+        fun start(c: Context) = launch(c, null)
+
+        // إعادة بناء الفقاعة بعد تغيير شكلها في الإعدادات / rebuild the bubble after its look changed in settings
+        fun reload(c: Context) {
+            if (running) launch(c, ACTION_RELOAD)
+        }
+
+        private fun launch(c: Context, action: String?) {
             val i = Intent(c, BubbleService::class.java)
+            if (action != null) i.action = action
             if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i) else c.startService(i)
         }
 

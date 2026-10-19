@@ -3,6 +3,8 @@
 
     <!-- الإنترنت للترجمة والتحديث فقط / Internet for translation and updates only -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- لمعرفة وجود اتصال قبل الترجمة / to know whether there is a connection before translating -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- يسمح للتطبيق بتثبيت تحديثاته بنفسه (يوافق عليه المستخدم مرة واحدة) -->
     <!-- Lets the app install its own updates (the user allows it once) -->
@@ -49,6 +51,18 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="floating_translator_bubble" />
+        </service>
+
+        <!-- زر القائمة السريعة لتشغيل الفقاعة / Quick Settings tile that starts the bubble -->
+        <service
+            android:name=".BubbleTile"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_bivox"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <!-- خدمة إمكانية الوصول لقراءة نص الشاشة / accessibility service that reads the screen text -->
