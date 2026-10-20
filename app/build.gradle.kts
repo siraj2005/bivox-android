@@ -25,7 +25,7 @@ android {
         targetSdk = 34
         versionCode = buildNumber
         // يُرفع مع كل تحديث ويظهر داخل التطبيق / bumped every update and shown in the app
-        versionName = "0.5.0"
+        versionName = "0.6.0"
     }
 
     signingConfigs {

@@ -74,6 +74,13 @@ object Ui {
             "on" to "مفعّل", "off" to "متوقف",
             "tile_desc" to "زر في القائمة السريعة لتشغيل الفقاعة وإيقافها بضغطة: اسحب القائمة للأسفل ← ✎ (تعديل) ← اسحب زر BiVox إلى الأعلى.",
             "tile_add" to "إضافة الزر إلى القائمة السريعة",
+            "mic_listening" to "🎤 أنصت... اضغط ⏹ عند الانتهاء",
+            "mic_denied" to "لا يوجد إذن الميكروفون — اسمح به من معلومات التطبيق ← الأذونات",
+            "mic_nospeech" to "لم أسمع كلامًا — حاول ثانية",
+            "mic_net" to "تعذّر التعرف على الكلام — تحقق من الإنترنت",
+            "mic_busy" to "محرك التعرف مشغول — حاول بعد لحظة",
+            "mic_lang" to "هذه اللغة غير متاحة للتعرف على الكلام في جهازك",
+            "mic_err" to "تعذّر التعرف على الكلام (قد يمنع النظام الميكروفون في الخلفية)",
         ),
         "en" to mapOf(
             "title" to "BiVox — Conversation Translator", "i_speak" to "My language",
@@ -134,6 +141,13 @@ object Ui {
             "on" to "On", "off" to "Off",
             "tile_desc" to "A Quick Settings tile to start/stop the bubble with one tap: pull the shade down → ✎ (edit) → drag the BiVox tile up.",
             "tile_add" to "Add the tile to Quick Settings",
+            "mic_listening" to "🎤 Listening... tap ⏹ when done",
+            "mic_denied" to "Microphone permission missing — allow it in App info → Permissions",
+            "mic_nospeech" to "I heard no speech — try again",
+            "mic_net" to "Speech recognition failed — check internet",
+            "mic_busy" to "The recognizer is busy — try again in a moment",
+            "mic_lang" to "This language isn't available for speech recognition on your device",
+            "mic_err" to "Speech recognition failed (the system may block the microphone in the background)",
         ),
     )
 }

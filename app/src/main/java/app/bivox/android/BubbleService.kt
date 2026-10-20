@@ -124,6 +124,13 @@ class BubbleService : Service() {
     private var busy = false
     private var statusKey = "ready"
 
+    // الميكروفون / the microphone
+    private var micSession: MicSession? = null
+    private var micMine = true            // الاستماع بلغتي (true) أم بلغة الطرف الآخر / listening in my language (true) or the other's
+    private var micMyBtn: Button? = null
+    private var micTheirBtn: Button? = null
+    private var fgNotif: Notification? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -209,6 +216,7 @@ class BubbleService : Service() {
     override fun onDestroy() {
         running = false
         snapAnim?.cancel()
+        stopMic(true)
         BivoxAccessibilityService.listener = null
         lens.close(); pick.close(); result.close()
         hub.shutdown()
@@ -244,9 +252,20 @@ class BubbleService : Service() {
             .setOngoing(true)
             .addAction(Notification.Action.Builder(
                 Icon.createWithResource(this, R.drawable.ic_stat_bivox), tx.getValue("notif_stop"), stop).build())
-        val n = nb.build()
+        fgNotif = nb.build()
+        applyFgType(false)
+    }
+
+    // نوع الخدمة الأمامية: «استخدام خاص» دائمًا، ونضيف «ميكروفون» أثناء الاستماع فقط
+    // Foreground type: "special use" always, plus "microphone" only while listening
+    private fun applyFgType(mic: Boolean) {
+        val n = fgNotif ?: return
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            var ty = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (mic) ty = ty or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            startForeground(NOTIF_ID, n, ty)
+        } else if (Build.VERSION.SDK_INT >= 30) {
+            startForeground(NOTIF_ID, n, if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
         } else {
             startForeground(NOTIF_ID, n)
         }
@@ -451,6 +470,7 @@ class BubbleService : Service() {
     }
 
     private fun closePanel() {
+        stopMic(true)
         hideKeyboard()
         val p = panel
         if (p != null) {
@@ -464,6 +484,8 @@ class BubbleService : Service() {
         meBtn = null
         theyBtn = null
         autoBtn = null
+        micMyBtn = null
+        micTheirBtn = null
         bubble?.visibility = View.VISIBLE
     }
 
@@ -527,6 +549,7 @@ class BubbleService : Service() {
             Prefs.setLangs(this, myIdx, theirIdx)
             myPicker.text = Langs.NAMES.getValue(Langs.CODES[myIdx]) + " ▾"
             theirPicker.text = Langs.NAMES.getValue(Langs.CODES[theirIdx]) + " ▾"
+            updateMicButtons()
         }
         val langRow = LinearLayout(this)
         langRow.orientation = LinearLayout.HORIZONTAL
@@ -566,6 +589,21 @@ class BubbleService : Service() {
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         clrLp.marginStart = gap / 2
         inRow.addView(smallButton("⌫") { input?.setText(""); draft = "" }, clrLp)
+        // زرا الميكروفون: 🎤 بلغتي و🎤 بلغة الطرف الآخر (يُخفيان إن لم يوجد محرك تعرف)
+        // Two mic buttons: 🎤 in my language and 🎤 in the other person's (hidden if no recognition engine)
+        micMyBtn = null; micTheirBtn = null
+        if (Mic.available(this)) {
+            val mb1 = smallButton("") { startMic(true) }
+            val mb2 = smallButton("") { startMic(false) }
+            micMyBtn = mb1; micTheirBtn = mb2
+            val l1 = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            l1.marginStart = gap / 2
+            inRow.addView(mb1, l1)
+            val l2 = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            l2.marginStart = gap / 2
+            inRow.addView(mb2, l2)
+            updateMicButtons()
+        }
         add(body, inRow, gap)
 
         // الزران الكبيران / the two big buttons
@@ -716,6 +754,83 @@ class BubbleService : Service() {
     private fun setStatus(key: String) {
         statusKey = key
         refreshStatus()
+    }
+
+    // ── الميكروفون / Microphone ──
+    private fun setInputText(s: String) {
+        val e = input ?: return
+        e.setText(s)
+        e.setSelection(e.text.length)
+    }
+
+    private fun updateMicButtons() {
+        val a = micMyBtn ?: return
+        val b = micTheirBtn ?: return
+        val on = micSession != null
+        a.text = if (on && micMine) "⏹" else "🎤 " + Langs.CODES[myIdx].uppercase()
+        b.text = if (on && !micMine) "⏹" else "🎤 " + Langs.CODES[theirIdx].uppercase()
+        a.isEnabled = !on || micMine
+        b.isEnabled = !on || !micMine
+        a.alpha = if (a.isEnabled) 1f else 0.4f
+        b.alpha = if (b.isEnabled) 1f else 0.4f
+    }
+
+    // الضغط يبدأ الاستماع بتلك اللغة، والضغط ثانية ينهيه ويترجم ما سُمع
+    // Tapping starts listening in that language; tapping again ends it and translates what was heard
+    private fun startMic(mine: Boolean) {
+        val cur = micSession
+        if (cur != null) { cur.stop(); return }
+        if (busy) return
+        if (myIdx == theirIdx) { setStatus("same"); return }
+        if (!Mic.granted(this)) {
+            // الإذن يُطلب عبر نشاط شفاف ثم نكمل تلقائيًا / the permission is asked via a transparent activity, then we continue
+            val opened = MicPermissionActivity.request(this) { g ->
+                if (panel != null) {
+                    if (g) startMic(mine) else setStatus("mic_denied")
+                }
+            }
+            if (!opened) setStatus("mic_denied")
+            return
+        }
+        micMine = mine
+        val code = Langs.CODES[if (mine) myIdx else theirIdx]
+        hideKeyboard()
+        // نضيف نوع «ميكروفون» للخدمة الأمامية؛ إن رفضه النظام نكمل بدونه
+        // Add the "microphone" type to the foreground service; if the system refuses, carry on without it
+        try { applyFgType(true) } catch (e: Exception) { }
+        val sess = MicSession(this,
+            { p -> if (micSession != null) setInputText(p) },
+            { text ->
+                micDone()
+                setInputText(text)
+                go(mine)
+            },
+            { key ->
+                micDone()
+                if (panel != null) setStatus(key)
+            })
+        micSession = sess
+        if (!sess.start(code)) {
+            micDone()
+            setStatus("mic_err")
+            return
+        }
+        setStatus("mic_listening")
+        updateMicButtons()
+    }
+
+    // انتهت الجلسة (بنتيجة أو خطأ) / the session ended (with a result or an error)
+    private fun micDone() {
+        micSession = null
+        if (running) { try { applyFgType(false) } catch (e: Exception) { } }
+        updateMicButtons()
+    }
+
+    // إلغاء الاستماع بلا نتيجة (إغلاق اللوحة أو إيقاف الخدمة) / cancel listening with no result (panel closed or service stopped)
+    private fun stopMic(cancel: Boolean) {
+        val s = micSession ?: return
+        if (cancel) s.cancel() else s.stop()
+        micDone()
     }
 
     // اتجاه يدوي: أنا ➜ هو أو هو ➜ أنا / manual direction: me ➜ them or them ➜ me
