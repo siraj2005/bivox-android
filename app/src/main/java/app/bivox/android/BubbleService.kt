@@ -137,6 +137,7 @@ class BubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
         running = true
+        Dbg.log("svc", "created")
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         env = Env(this)
         hub = TranslateHub(translator, main)
@@ -216,6 +217,7 @@ class BubbleService : Service() {
 
     override fun onDestroy() {
         running = false
+        Dbg.log("svc", "destroyed")
         snapAnim?.cancel()
         stopMic(true)
         BivoxAccessibilityService.listener = null
@@ -524,6 +526,10 @@ class BubbleService : Service() {
         title.textDirection = View.TEXT_DIRECTION_LTR
         title.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         add(head, title, weight = 1f, width = 0)
+        val dbgLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dbgLp.marginEnd = gap / 2
+        head.addView(smallButton("🐞") { buildDebug() }, dbgLp)
         head.addView(smallButton("✕") { closePanel() }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         add(body, head)
@@ -708,6 +714,48 @@ class BubbleService : Service() {
         }
     }
 
+    // صفحة التشخيص: تقرير حيّ بما يجري (يُنسخ ويُرسل للمطوّر) / diagnostics page: a live report of what is going on (copy and send to the developer)
+    private fun buildDebug() {
+        val body = panelBody ?: return
+        draft = input?.text?.toString() ?: draft
+        hideKeyboard()
+        body.removeAllViews()
+        val gap = px(2.5f)
+        val rep = Dbg.report(this)
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        val names = listOf("dbg_back", "dbg_refresh", "dbg_copy", "dbg_clear")
+        for (n in names) {
+            val b = smallButton(t.getValue(n)) { }
+            b.setOnClickListener {
+                when (n) {
+                    "dbg_back" -> buildMain()
+                    "dbg_refresh" -> buildDebug()
+                    "dbg_copy" -> {
+                        try {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("BiVox report", Dbg.report(this)))
+                            b.text = t.getValue("copied")
+                        } catch (e: Exception) { }
+                    }
+                    else -> { Dbg.clear(); buildDebug() }
+                }
+            }
+            val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (n != names[0]) lp.marginStart = gap / 2
+            row.addView(b, lp)
+        }
+        add(body, row)
+        // في اللوحة نعرض آخر 70 سطرًا؛ النسخ يشمل التقرير كاملًا / the panel shows the last 70 lines; copy includes the full report
+        val lines = rep.trimEnd().split('\n')
+        val tv = label(lines.takeLast(70).joinToString("\n"), 2.7f, cOrig)
+        tv.typeface = Typeface.MONOSPACE
+        tv.textDirection = View.TEXT_DIRECTION_LTR
+        tv.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+        tv.setTextIsSelectable(true)
+        add(body, tv, gap)
+    }
+
     // صفحة اختيار اللغة داخل اللوحة (بدل نافذة منبثقة) / language list page inside the panel (instead of a dialog)
     private fun buildList(current: Int, onPick: (Int) -> Unit) {
         val body = panelBody ?: return
@@ -800,7 +848,9 @@ class BubbleService : Service() {
         if (myIdx == theirIdx) { setStatus("same"); return }
         if (!Mic.granted(this)) {
             // الإذن يُطلب عبر نشاط شفاف ثم نكمل تلقائيًا / the permission is asked via a transparent activity, then we continue
+            Dbg.log("mic", "asking for RECORD_AUDIO permission")
             val opened = MicPermissionActivity.request(this) { g ->
+                Dbg.log("mic", "permission result: " + g)
                 if (panel != null) {
                     if (g) startMic(mine) else setStatus("mic_denied")
                 }
@@ -813,7 +863,13 @@ class BubbleService : Service() {
         hideKeyboard()
         // نضيف نوع «ميكروفون» للخدمة الأمامية؛ إن رفضه النظام نكمل بدونه
         // Add the "microphone" type to the foreground service; if the system refuses, carry on without it
-        try { applyFgType(true) } catch (e: Exception) { }
+        try {
+            applyFgType(true)
+            Dbg.log("mic", "foreground type +microphone: ok")
+        } catch (e: Exception) {
+            Dbg.log("mic", "foreground type +microphone refused: " + e.javaClass.simpleName + " " + (e.message ?: ""))
+        }
+        Dbg.log("mic", "start listening: " + Mic.tag(code) + " (" + (if (mine) "my language" else "other language") + ")")
         val sess = MicSession(this,
             { p -> if (micSession != null) setInputText(p) },
             { text ->
@@ -876,11 +932,14 @@ class BubbleService : Service() {
         setBusyButtons(true)
         setStatus("working")
         io.execute {
+            val t0 = System.currentTimeMillis()
             val res: Pair<String, String>? = try {
                 job(text, my, their)
             } catch (e: Exception) {
                 null
             }
+            Dbg.log("tr", "job " + (if (res != null) "ok" else "FAILED") + " " + text.length + " chars, " +
+                (System.currentTimeMillis() - t0) + "ms" + (if (res != null) " → " + res.second else ""))
             main.post { onDone(text, res?.first, res?.second ?: their) }
         }
     }
@@ -906,8 +965,8 @@ class BubbleService : Service() {
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, i: Intent?) {
                 when (i?.action) {
-                    Intent.ACTION_SCREEN_OFF -> { lens.pause(); result.close() }
-                    Intent.ACTION_SCREEN_ON -> lens.resume()
+                    Intent.ACTION_SCREEN_OFF -> { Dbg.log("svc", "screen off"); lens.pause(); result.close() }
+                    Intent.ACTION_SCREEN_ON -> { Dbg.log("svc", "screen on"); lens.resume() }
                 }
             }
         }
@@ -950,7 +1009,9 @@ class BubbleService : Service() {
             val reader = BivoxAccessibilityService.instance
             if (reader == null) return@postDelayed
             env.readPool.execute {
+                val t0 = System.currentTimeMillis()
                 val boxes: List<TextBox> = try { reader.collect() } catch (e: Exception) { emptyList() }
+                Dbg.log("a11y", "screen read: " + boxes.size + " texts in " + (System.currentTimeMillis() - t0) + "ms")
                 main.post {
                     if (boxes.isEmpty()) toast(t.getValue("pick_none")) else onBoxes(boxes)
                 }

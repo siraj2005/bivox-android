@@ -3,7 +3,10 @@ package app.bivox.android
 import android.app.Activity
 import android.app.StatusBarManager
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -485,6 +488,35 @@ class MainActivity : Activity() {
         }
     }
 
+    // تقرير التشخيص: يُنسخ ويُرسل للمطوّر / diagnostics report: copy it and send it to the developer
+    private fun showDebug() {
+        if (isFinishing) return
+        val tv = TextView(this)
+        tv.text = Dbg.report(this)
+        tv.setTextColor(cText)
+        tv.typeface = Typeface.MONOSPACE
+        tv.setTextIsSelectable(true)
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, u * 2.9f)
+        tv.textDirection = View.TEXT_DIRECTION_LTR
+        val pad = (u * 3f).toInt()
+        tv.setPadding(pad, pad, pad, pad)
+        val sv = ScrollView(this)
+        sv.addView(tv)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(t.getValue("dbg_title"))
+            .setView(sv)
+            .setPositiveButton(t.getValue("dbg_copy")) { _, _ ->
+                try {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("BiVox report", Dbg.report(this)))
+                    setStatus("copied")
+                } catch (e: Exception) { }
+            }
+            .setNeutralButton(t.getValue("dbg_clear")) { _, _ -> Dbg.clear() }
+            .setNegativeButton(t.getValue("close"), null)
+            .show()
+    }
+
     // يشرح كيف يُضاف صوت اللغة ويفتح إعدادات النطق
     // Explains how to add the language voice and opens the speech settings
     private fun showVoiceHelp(lang: String) {
@@ -708,6 +740,7 @@ class MainActivity : Activity() {
         cycleRow(card, "set_speak", gap, { t.getValue(if (Prefs.autoSpeak(this)) "on" else "off") }) {
             Prefs.setAutoSpeak(this, !Prefs.autoSpeak(this))
         }
+        cycleRow(card, "dbg_title", gap, { t.getValue("dbg_open") }) { showDebug() }
         add(body, card, gap)
     }
 

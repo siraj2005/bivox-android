@@ -18,18 +18,21 @@ class Translator {
         if (t.isEmpty()) return ""
         val key = "$src|$dst|$t"
         cacheGet(key)?.let { return it }
-        val engines = listOf(this::google, this::myMemory)
-        for (engine in engines) {
+        val engines = listOf("google" to this::google, "mymemory" to this::myMemory)
+        val t0 = System.currentTimeMillis()
+        for ((name, engine) in engines) {
             // محاولتان لكل محرك: الفشل العابر شائع على الشبكات الضعيفة / two tries per engine: transient failures are common on weak networks
             for (attempt in 0..1) {
                 try {
                     val r = engine(t, src, dst)
                     if (r.isNotEmpty()) {
                         cachePut(key, r)
+                        Dbg.log("tr", name + " ok " + src + "→" + dst + " " + (System.currentTimeMillis() - t0) + "ms")
                         return r
                     }
                     break
                 } catch (e: Exception) {
+                    Dbg.log("tr", name + " fail try " + (attempt + 1) + ": " + e.javaClass.simpleName)
                     if (attempt == 0) pause()
                 }
             }

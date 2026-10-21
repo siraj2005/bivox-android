@@ -44,8 +44,13 @@ object Speech {
     // Speaks; if the engines are still starting (first time) waits a moment and retries once
     fun say(ctx: Context, text: String, lang: String, main: Handler, onResult: (SpeakResult) -> Unit) {
         val r = get(ctx).say(text, lang)
+        Dbg.log("tts", lang + " → " + r)
         if (r == SpeakResult.NO_ENGINE) {
-            main.postDelayed({ onResult(get(ctx).say(text, lang)) }, 900)
+            main.postDelayed({
+                val r2 = get(ctx).say(text, lang)
+                Dbg.log("tts", lang + " retry → " + r2)
+                onResult(r2)
+            }, 900)
         } else {
             onResult(r)
         }

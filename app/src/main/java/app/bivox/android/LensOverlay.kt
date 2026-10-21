@@ -140,7 +140,9 @@ class LensOverlay(private val env: Env, private val hub: TranslateHub) {
         val reader = BivoxAccessibilityService.instance ?: return
         val myGen = ++gen
         env.readPool.execute {
+            val t0 = System.currentTimeMillis()
             val boxes: List<TextBox> = try { reader.collect() } catch (e: Exception) { emptyList() }
+            Dbg.logEvery("lens", 1500, "read " + boxes.size + " texts in " + (System.currentTimeMillis() - t0) + "ms")
             env.main.post {
                 if (myGen == gen && view === v) applyBoxes(v, boxes, myGen)
             }

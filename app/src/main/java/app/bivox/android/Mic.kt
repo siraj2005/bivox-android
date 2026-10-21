@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -52,33 +53,48 @@ class MicSession(
 ) {
     private var rec: SpeechRecognizer? = null
     private var done = false
+    private var t0 = 0L
+    private var gotPartial = false
+    @Volatile var peak = -10f            // أعلى مستوى صوت التقطه الميكروفون / the highest sound level the mic picked up
+
+    private fun ms(): Long = SystemClock.uptimeMillis() - t0
 
     fun start(code: String): Boolean {
+        t0 = SystemClock.uptimeMillis()
         return try {
             val r = SpeechRecognizer.createSpeechRecognizer(ctx)
             rec = r
             r.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) { if (!done) onLevel(rmsdB) }
+                override fun onReadyForSpeech(params: Bundle?) { Dbg.log("mic", "ready for speech (+" + ms() + "ms)") }
+                override fun onBeginningOfSpeech() { Dbg.log("mic", "speech begins (+" + ms() + "ms)") }
+                override fun onRmsChanged(rmsdB: Float) {
+                    if (rmsdB > peak) peak = rmsdB
+                    if (!done) onLevel(rmsdB)
+                }
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
+                override fun onEndOfSpeech() { Dbg.log("mic", "speech ends (+" + ms() + "ms)") }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
                 override fun onPartialResults(partialResults: Bundle?) {
                     if (done) return
                     val s = first(partialResults)
-                    if (s.isNotEmpty()) onPartial(s)
+                    if (s.isNotEmpty()) {
+                        if (!gotPartial) { gotPartial = true; Dbg.log("mic", "first partial: \"" + s + "\" (+" + ms() + "ms)") }
+                        onPartial(s)
+                    }
                 }
                 override fun onResults(results: Bundle?) {
                     if (done) return
                     done = true
                     val s = first(results)
+                    val all = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    Dbg.log("mic", "final: \"" + s + "\" alts=" + (all?.size ?: 0) + " peak=" + "%.1f".format(peak) + " (+" + ms() + "ms)")
                     release()
                     if (s.isEmpty()) onFail("mic_nospeech", 7) else onFinal(s)
                 }
                 override fun onError(error: Int) {
                     if (done) return
                     done = true
+                    Dbg.log("mic", "ERROR code=" + error + " (" + Mic.errorKey(error) + ") peak=" + "%.1f".format(peak) + " (+" + ms() + "ms)")
                     release()
                     onFail(Mic.errorKey(error), error)
                 }
@@ -97,6 +113,7 @@ class MicSession(
             r.startListening(i)
             true
         } catch (e: Exception) {
+            Dbg.log("mic", "start failed: " + e)
             release()
             false
         }
