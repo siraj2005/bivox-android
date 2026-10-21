@@ -47,7 +47,8 @@ class MicSession(
     private val ctx: Context,
     private val onPartial: (String) -> Unit,
     private val onFinal: (String) -> Unit,
-    private val onFail: (String) -> Unit,
+    private val onFail: (String, Int) -> Unit,
+    private val onLevel: (Float) -> Unit = {},
 ) {
     private var rec: SpeechRecognizer? = null
     private var done = false
@@ -59,7 +60,7 @@ class MicSession(
             r.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onRmsChanged(rmsdB: Float) { if (!done) onLevel(rmsdB) }
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -73,20 +74,25 @@ class MicSession(
                     done = true
                     val s = first(results)
                     release()
-                    if (s.isEmpty()) onFail("mic_nospeech") else onFinal(s)
+                    if (s.isEmpty()) onFail("mic_nospeech", 7) else onFinal(s)
                 }
                 override fun onError(error: Int) {
                     if (done) return
                     done = true
                     release()
-                    onFail(Mic.errorKey(error))
+                    onFail(Mic.errorKey(error), error)
                 }
             })
             val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Mic.tag(code))
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            // صبر أطول كي تُقبل الكلمات القصيرة والجمل القصيرة (قد يتجاهلها بعض المحركات)
+            // More patience so short words and short sentences are accepted (some engines may ignore these)
+            i.putExtra("android.speech.extras.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 2000L)
+            i.putExtra("android.speech.extras.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 2000L)
+            i.putExtra("android.speech.extras.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 500L)
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
             r.startListening(i)
             true

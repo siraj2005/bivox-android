@@ -123,6 +123,7 @@ class BubbleService : Service() {
     private var draft = ""
     private var busy = false
     private var statusKey = "ready"
+    private var statusExtra = ""
 
     // الميكروفون / the microphone
     private var micSession: MicSession? = null
@@ -747,12 +748,27 @@ class BubbleService : Service() {
     private fun refreshStatus() {
         val s = statusLbl ?: return
         var txt = t.getValue(statusKey)
+        if (statusExtra.isNotEmpty()) txt += "  " + statusExtra
         if (statusKey == "ready" && Speech.peek()?.available == false) txt += "  " + t.getValue("speak_off")
         s.text = txt
     }
 
-    private fun setStatus(key: String) {
+    private fun setStatus(key: String, extra: String = "") {
         statusKey = key
+        statusExtra = extra
+        refreshStatus()
+    }
+
+    // مؤشر مستوى الصوت أثناء الاستماع: يُظهر إن كان الميكروفون يلتقط صوتك فعلًا
+    // Sound level meter while listening: shows whether the microphone really picks up your voice
+    private var lastLevelAt = 0L
+    private fun onMicLevel(rms: Float) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastLevelAt < 120 || micSession == null) return
+        lastLevelAt = now
+        val n = (((rms + 2f) / 12f) * 7f).toInt().coerceIn(0, 7)
+        val bars = "▁▂▃▄▅▆▇█"
+        statusExtra = bars.substring(0, n + 1)
         refreshStatus()
     }
 
@@ -805,10 +821,12 @@ class BubbleService : Service() {
                 setInputText(text)
                 go(mine)
             },
-            { key ->
+            { key, code ->
                 micDone()
-                if (panel != null) setStatus(key)
-            })
+                // التشخيص: نعرض رمز الخطأ واللغة المطلوبة / diagnostics: show the error code and the requested language
+                if (panel != null) setStatus(key, "[" + Mic.tag(Langs.CODES[if (mine) myIdx else theirIdx]) + " · " + code + "]")
+            },
+            { rms -> onMicLevel(rms) })
         micSession = sess
         if (!sess.start(code)) {
             micDone()
@@ -875,6 +893,7 @@ class BubbleService : Service() {
         lastOrig = orig; lastTrans = out; lastDst = dst
         draft = ""
         statusKey = "ready"
+        statusExtra = ""
         if (Prefs.autoSpeak(this)) {
             Speech.say(this, out, dst, main) { r -> if (r == SpeakResult.NO_VOICE) setStatus("no_voice") }
         }
