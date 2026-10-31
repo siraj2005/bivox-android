@@ -83,6 +83,9 @@ object Ui {
             "mic_err" to "تعذّر التعرف على الكلام (قد يمنع النظام الميكروفون في الخلفية)",
             "dbg_back" to "◀ رجوع", "dbg_refresh" to "↻ تحديث", "dbg_copy" to "📋 نسخ", "dbg_clear" to "🗑 مسح",
             "dbg_title" to "تقرير التشخيص", "dbg_open" to "فتح",
+            "mic_sending" to "جاري التعرف على الكلام...",
+            "set_mic" to "محرك التعرف على الكلام",
+            "mic_eng_0" to "Google (إنترنت)", "mic_eng_1" to "الهاتف",
         ),
         "en" to mapOf(
             "title" to "BiVox — Conversation Translator", "i_speak" to "My language",
@@ -152,6 +155,9 @@ object Ui {
             "mic_err" to "Speech recognition failed (the system may block the microphone in the background)",
             "dbg_back" to "◀ Back", "dbg_refresh" to "↻ Refresh", "dbg_copy" to "📋 Copy", "dbg_clear" to "🗑 Clear",
             "dbg_title" to "Diagnostics report", "dbg_open" to "Open",
+            "mic_sending" to "Recognizing speech...",
+            "set_mic" to "Speech recognition engine",
+            "mic_eng_0" to "Google (internet)", "mic_eng_1" to "Phone",
         ),
     )
 }

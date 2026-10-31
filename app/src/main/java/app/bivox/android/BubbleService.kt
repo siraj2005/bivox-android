@@ -126,7 +126,7 @@ class BubbleService : Service() {
     private var statusExtra = ""
 
     // الميكروفون / the microphone
-    private var micSession: MicSession? = null
+    private var micSession: MicRun? = null
     private var micMine = true            // الاستماع بلغتي (true) أم بلغة الطرف الآخر / listening in my language (true) or the other's
     private var micMyBtn: Button? = null
     private var micTheirBtn: Button? = null
@@ -599,7 +599,7 @@ class BubbleService : Service() {
         // زرا الميكروفون: 🎤 بلغتي و🎤 بلغة الطرف الآخر (يُخفيان إن لم يوجد محرك تعرف)
         // Two mic buttons: 🎤 in my language and 🎤 in the other person's (hidden if no recognition engine)
         micMyBtn = null; micTheirBtn = null
-        if (Mic.available(this)) {
+        if (Prefs.micEngine(this) == 0 || Mic.available(this)) {
             val mb1 = smallButton("") { startMic(true) }
             val mb2 = smallButton("") { startMic(false) }
             micMyBtn = mb1; micTheirBtn = mb2
@@ -861,6 +861,24 @@ class BubbleService : Service() {
         micMine = mine
         val code = Langs.CODES[if (mine) myIdx else theirIdx]
         hideKeyboard()
+        // المحرك: Google عبر الإنترنت إن اختاره المستخدم وكان هناك اتصال، وإلا محرك الهاتف
+        // Engine: Google over the internet if chosen and online, otherwise the phone's engine
+        var web = Prefs.micEngine(this) == 0
+        if (web && !Net.online(this)) {
+            if (Mic.available(this)) {
+                Dbg.log("mic", "offline → using the phone engine")
+                web = false
+            } else {
+                setStatus("offline")
+                return
+            }
+        }
+        beginMic(mine, code, web)
+    }
+
+    // يبدأ جلسة استماع بالمحرك المطلوب؛ فشل Google (الرمز -1) يعيد المحاولة بمحرك الهاتف تلقائيًا
+    // Starts a listening session with the requested engine; a Google failure (code -1) retries with the phone engine automatically
+    private fun beginMic(mine: Boolean, code: String, web: Boolean) {
         // نضيف نوع «ميكروفون» للخدمة الأمامية؛ إن رفضه النظام نكمل بدونه
         // Add the "microphone" type to the foreground service; if the system refuses, carry on without it
         try {
@@ -869,20 +887,31 @@ class BubbleService : Service() {
         } catch (e: Exception) {
             Dbg.log("mic", "foreground type +microphone refused: " + e.javaClass.simpleName + " " + (e.message ?: ""))
         }
-        Dbg.log("mic", "start listening: " + Mic.tag(code) + " (" + (if (mine) "my language" else "other language") + ")")
-        val sess = MicSession(this,
-            { p -> if (micSession != null) setInputText(p) },
-            { text ->
-                micDone()
-                setInputText(text)
-                go(mine)
-            },
-            { key, code ->
-                micDone()
+        Dbg.log("mic", "start listening [" + (if (web) "google-web" else "phone") + "]: " + Mic.tag(code) +
+            " (" + (if (mine) "my language" else "other language") + ")")
+        val finalCb: (String) -> Unit = { text ->
+            micDone()
+            setInputText(text)
+            go(mine)
+        }
+        val failCb: (String, Int) -> Unit = { key, c ->
+            micDone()
+            if (web && c == -1 && Mic.available(this) && panel != null) {
+                Dbg.log("mic", "google-web unreachable → falling back to the phone engine")
+                beginMic(mine, code, false)
+            } else if (panel != null) {
                 // التشخيص: نعرض رمز الخطأ واللغة المطلوبة / diagnostics: show the error code and the requested language
-                if (panel != null) setStatus(key, "[" + Mic.tag(Langs.CODES[if (mine) myIdx else theirIdx]) + " · " + code + "]")
-            },
-            { rms -> onMicLevel(rms) })
+                setStatus(key, "[" + Mic.tag(code) + " · " + c + "]")
+            }
+        }
+        val sess: MicRun = if (web) {
+            WebMicSession(this, main, finalCb, failCb, { rms -> onMicLevel(rms) },
+                { if (micSession != null) setStatus("mic_sending") })
+        } else {
+            MicSession(this,
+                { p -> if (micSession != null) setInputText(p) },
+                finalCb, failCb, { rms -> onMicLevel(rms) })
+        }
         micSession = sess
         if (!sess.start(code)) {
             micDone()

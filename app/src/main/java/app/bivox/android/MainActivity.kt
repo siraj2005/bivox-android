@@ -740,6 +740,9 @@ class MainActivity : Activity() {
         cycleRow(card, "set_speak", gap, { t.getValue(if (Prefs.autoSpeak(this)) "on" else "off") }) {
             Prefs.setAutoSpeak(this, !Prefs.autoSpeak(this))
         }
+        cycleRow(card, "set_mic", gap, { t.getValue("mic_eng_" + Prefs.micEngine(this)) }) {
+            Prefs.setMicEngine(this, (Prefs.micEngine(this) + 1) % 2)
+        }
         cycleRow(card, "dbg_title", gap, { t.getValue("dbg_open") }) { showDebug() }
         add(body, card, gap)
     }

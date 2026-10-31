@@ -48,6 +48,7 @@ object Dbg {
         sb.append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
             .append(" · Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n")
         sb.append("mic perm: ").append(Mic.granted(c)).append(" · recognizer: ").append(Mic.available(c)).append('\n')
+        sb.append("mic engine setting: ").append(if (Prefs.micEngine(c) == 0) "google-web" else "phone").append('\n')
         sb.append("recognizer service: ").append(secure(c, "voice_recognition_service")).append('\n')
         sb.append("recognizers: ").append(recognizers(c)).append('\n')
         sb.append("tts engine: ").append(secure(c, "tts_default_synth")).append('\n')

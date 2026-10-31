@@ -83,6 +83,14 @@ object Prefs {
         sp(c).edit().putBoolean("autospeak", v).apply()
     }
 
+    // محرك التعرف على الكلام: 0 = Google عبر الإنترنت (ويرجع لمحرك الهاتف عند الفشل)، 1 = محرك الهاتف
+    // Speech engine: 0 = Google over the internet (falls back to the phone engine on failure), 1 = the phone's engine
+    fun micEngine(c: Context): Int = sp(c).getInt("micengine", 0).coerceIn(0, 1)
+
+    fun setMicEngine(c: Context, v: Int) {
+        sp(c).edit().putInt("micengine", v).apply()
+    }
+
     // حجم الفقاعة (0 صغير، 1 متوسط، 2 كبير) وشفافيتها (0 كاملة، 1 متوسطة، 2 خفيفة)
     // Bubble size (0 small, 1 medium, 2 large) and opacity (0 full, 1 medium, 2 light)
     fun bubbleScale(c: Context): Int = sp(c).getInt("bscale", 1).coerceIn(0, 2)

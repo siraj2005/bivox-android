@@ -50,7 +50,7 @@ class MicSession(
     private val onFinal: (String) -> Unit,
     private val onFail: (String, Int) -> Unit,
     private val onLevel: (Float) -> Unit = {},
-) {
+) : MicRun {
     private var rec: SpeechRecognizer? = null
     private var done = false
     private var t0 = 0L
@@ -59,7 +59,7 @@ class MicSession(
 
     private fun ms(): Long = SystemClock.uptimeMillis() - t0
 
-    fun start(code: String): Boolean {
+    override fun start(code: String): Boolean {
         t0 = SystemClock.uptimeMillis()
         return try {
             val r = SpeechRecognizer.createSpeechRecognizer(ctx)
@@ -120,12 +120,12 @@ class MicSession(
     }
 
     // الضغط ثانية: ينهي الاستماع ويسلّم ما سمعه / pressing again: ends listening and delivers what it heard
-    fun stop() {
+    override fun stop() {
         try { rec?.stopListening() } catch (e: Exception) { }
     }
 
     // إلغاء بلا نتيجة / cancel without a result
-    fun cancel() {
+    override fun cancel() {
         done = true
         release()
     }
