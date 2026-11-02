@@ -4,8 +4,10 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="512"
-    android:viewportHeight="512">
+    android:viewportWidth="320"
+    android:viewportHeight="320">
+    <!-- نقصّ الهوامش الفارغة حول الشعار ليملأ الأيقونة / crop the empty margins around the logo so it fills the icon -->
+    <group android:translateX="-96" android:translateY="-96">
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.4" android:pathData="M120,243 a7,7 0 0 1 14,0 v26 a7,7 0 0 1 -14,0 z M378,243 a7,7 0 0 1 14,0 v26 a7,7 0 0 1 -14,0 z" />
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.6" android:pathData="M144,223 a7,7 0 0 1 14,0 v66 a7,7 0 0 1 -14,0 z M354,223 a7,7 0 0 1 14,0 v66 a7,7 0 0 1 -14,0 z" />
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.8" android:pathData="M168,193 a7,7 0 0 1 14,0 v126 a7,7 0 0 1 -14,0 z M330,193 a7,7 0 0 1 14,0 v126 a7,7 0 0 1 -14,0 z" />
@@ -15,4 +17,5 @@
     <path android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.6" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M344.0,372.0 L340.3,373.6 M333.0,376.7 L329.3,378.2 M321.8,381.0 L318.0,382.3 M310.3,384.7 L306.5,385.8 M298.8,387.8 L294.9,388.7 M287.0,390.3 L283.1,391.0 M275.2,392.1 L271.2,392.5 M263.2,393.1 L259.2,393.3 M251.2,393.3 L247.2,393.2 M239.2,392.7 L235.2,392.3 M227.3,391.2 L223.4,390.5 M215.6,388.8 L211.7,387.9 M204.0,385.6 L200.2,384.4 M192.7,381.6 L189.0,380.1" />
     <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="7" android:strokeLineJoin="round" android:pathData="M326,122 L342,139 L319,142 Z" />
     <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="7" android:strokeLineJoin="round" android:pathData="M186,390 L170,373 L193,370 Z" />
+    </group>
 </vector>
