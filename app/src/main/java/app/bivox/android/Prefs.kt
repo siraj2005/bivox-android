@@ -83,6 +83,13 @@ object Prefs {
         sp(c).edit().putBoolean("autospeak", v).apply()
     }
 
+    // فحص التحديث في الخلفية: وقت آخر فحص، وآخر بناء أُشعر به المستخدم
+    // Background update check: time of the last check, and the last build the user was notified about
+    fun lastBgCheck(c: Context): Long = sp(c).getLong("upd_bg", 0L)
+    fun setLastBgCheck(c: Context, v: Long) { sp(c).edit().putLong("upd_bg", v).apply() }
+    fun notifiedBuild(c: Context): Int = sp(c).getInt("upd_notified", 0)
+    fun setNotifiedBuild(c: Context, v: Int) { sp(c).edit().putInt("upd_notified", v).apply() }
+
     // محرك التعرف على الكلام: 0 = Google عبر الإنترنت (ويرجع لمحرك الهاتف عند الفشل)، 1 = محرك الهاتف
     // Speech engine: 0 = Google over the internet (falls back to the phone engine on failure), 1 = the phone's engine
     fun micEngine(c: Context): Int = sp(c).getInt("micengine", 0).coerceIn(0, 1)

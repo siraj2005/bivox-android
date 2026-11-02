@@ -131,6 +131,12 @@ class BubbleService : Service() {
     private var micMyBtn: Button? = null
     private var micTheirBtn: Button? = null
     private var fgNotif: Notification? = null
+    private val updateTick: Runnable = object : Runnable {
+        override fun run() {
+            UpdateWatcher.checkIfDue(this@BubbleService)
+            main.postDelayed(this, 5 * 3600 * 1000L)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -156,6 +162,9 @@ class BubbleService : Service() {
         Speech.acquire()
         Speech.listen(voiceReady, voiceFail)
         registerScreenReceiver()
+        // فحص التحديث: بعد البدء بقليل، ثم كل 5 ساعات، وعند إضاءة الشاشة إن مضت 5 ساعات
+        // Update check: shortly after start, then every 5 hours, and when the screen turns on if 5 hours have passed
+        main.postDelayed(updateTick, 20000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -218,6 +227,7 @@ class BubbleService : Service() {
     override fun onDestroy() {
         running = false
         Dbg.log("svc", "destroyed")
+        main.removeCallbacks(updateTick)
         snapAnim?.cancel()
         stopMic(true)
         BivoxAccessibilityService.listener = null
@@ -238,21 +248,12 @@ class BubbleService : Service() {
     private fun startAsForeground() {
         val lang = Prefs.uiLang(this)
         val tx = Ui.TEXTS.getValue(lang)
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "BiVox", NotificationManager.IMPORTANCE_LOW))
-        }
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), flags)
         val stopIntent = Intent(this, BubbleService::class.java).setAction(ACTION_STOP)
         val stop = PendingIntent.getService(this, 1, stopIntent, flags)
-        @Suppress("DEPRECATION")
-        val nb = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
-        nb.setSmallIcon(R.drawable.ic_stat_bivox)
-            .setContentTitle("BiVox")
-            .setContentText(tx.getValue("notif_text"))
-            .setContentIntent(open)
-            .setOngoing(true)
+        // إشعار الفقاعة من نظام الأنواع: الشعار أحادي اللون بلا ألوان / the bubble notification from the kinds system: monochrome logo, no colours
+        val nb = Notif.build(this, NKind.BUBBLE, "BiVox", tx.getValue("notif_text"), open)
             .addAction(Notification.Action.Builder(
                 Icon.createWithResource(this, R.drawable.ic_stat_bivox), tx.getValue("notif_stop"), stop).build())
         fgNotif = nb.build()
@@ -995,7 +996,7 @@ class BubbleService : Service() {
             override fun onReceive(c: Context?, i: Intent?) {
                 when (i?.action) {
                     Intent.ACTION_SCREEN_OFF -> { Dbg.log("svc", "screen off"); lens.pause(); result.close() }
-                    Intent.ACTION_SCREEN_ON -> { Dbg.log("svc", "screen on"); lens.resume() }
+                    Intent.ACTION_SCREEN_ON -> { Dbg.log("svc", "screen on"); lens.resume(); UpdateWatcher.checkIfDue(applicationContext) }
                 }
             }
         }

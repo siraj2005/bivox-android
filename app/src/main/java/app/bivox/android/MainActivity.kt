@@ -112,8 +112,6 @@ class MainActivity : Activity() {
         Speech.acquire()
         Speech.listen(voiceReady, voiceFail)
         buildUi()
-        // تحقق صامت من التحديث عند فتح التطبيق / silent update check when the app opens
-        if (savedInstanceState == null) checkUpdate(false)
         // نهيّئ النطق بعد لحظة (لا يبطئ الفتح) كي يكون جاهزًا عند أول ترجمة
         // Warm up speech a moment later (does not slow the launch) so it is ready by the first translation
         main.postDelayed({ if (!isFinishing && Prefs.autoSpeak(this)) Speech.get(this) }, 1500)
@@ -128,6 +126,10 @@ class MainActivity : Activity() {
     // After returning from a voice download or the speech settings, rebuild the engines so the app sees the change
     override fun onResume() {
         super.onResume()
+        // فحص التحديث عند كل فتح للتطبيق (بفاصل دقيقتين كي لا يتكرر أثناء التنقل بين الشاشات) وإزالة إشعار التحديث
+        // Update check on every app open (2-minute gap so it doesn't repeat while moving between screens), and clear the update notification
+        Notif.cancelUpdate(this)
+        checkUpdate(false)
         // اللغات قد تتغير من لوحة الفقاعة / the languages may change from the bubble panel
         myIdx = Prefs.my(this)
         theirIdx = Prefs.their(this)
@@ -829,9 +831,9 @@ class MainActivity : Activity() {
     private fun checkUpdate(manual: Boolean) {
         if (checkingUpdate || updating) return
         if (!manual) {
-            // فحص صامت مرة كل 6 ساعات فقط: أخف على البطارية والشبكة / silent check only every 6 hours: lighter on battery and network
+            // فحص صامت عند كل فتح، بفاصل دقيقتين على الأقل / silent check on every open, at least 2 minutes apart
             val now = System.currentTimeMillis()
-            if (now - Prefs.lastUpdateCheck(this) < 6 * 3600 * 1000L) return
+            if (now - Prefs.lastUpdateCheck(this) < 2 * 60 * 1000L) return
             Prefs.setLastUpdateCheck(this, now)
         }
         checkingUpdate = true
